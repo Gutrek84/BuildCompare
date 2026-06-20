@@ -80,15 +80,25 @@ If you want to keep improving this with AI assistance later:
 - Point Grok at the source folder: `grok --cwd "C:\Users\Owner\projects\wow-addons\BuildCompare"`
 - Make sure the `AGENTS.md` in this folder (or copy it next to the .toc when testing) is present — it contains the critical "never touch raw CLEU" rule and other WoW Lua conventions.
 
+## Features Implemented (this update)
+
+- **Dropdown-style filters** (Instance / Key Level / Build label) — click the buttons in the UI to cycle through available values + "All". List updates live.
+- **Better run comparison table** — "Sel" buttons on run rows let you pick runs. Bottom panel shows detailed side-by-side comparison (DT, DTPS, Healing, Absorbs, CD count, damage type breakdown) **plus Build Stats deltas** (Mastery/Crit/Haste/Vers ratings and % with raw deltas and % change columns) so you can directly see how stat allocation affected your tanking performance.
+- **Auto record on M+ completion / boss kill** — Automatically tracks on CHALLENGE_MODE_START / ENCOUNTER_START and records on completion (no manual /bc record needed for standard content).
+- **More metrics**:
+  - Absorbs captured from the built-in meter.
+  - Damage type breakdown (physical / magic at minimum; inspect C_DamageMeter for more).
+  - Defensive cooldown tracking (Barkskin, Survival Instincts, Shield Wall, Icebound Fortitude, Anti-Magic Shell, Blessing of Protection, etc.). Logged via cast events during the run and shown in comparisons.
+
+Old saved runs remain fully compatible.
+
 ## Roadmap / Ideas (pull requests welcome)
 
-- Dropdown filters for instance / key level / build label in the UI.
-- Side-by-side comparison mode with bigger % callouts and stat delta columns.
-- Auto-record on M+ completion or boss kill (with confirmation).
-- Export runs to CSV / clipboard for spreadsheets.
-- Absorbs, external heals, death recap correlation.
-- WeakAuras or Plater integration hooks.
+- Proper scrolling dropdown menus (instead of cycling buttons).
+- CSV / clipboard export of runs.
 - Per-character vs account DB toggle.
+- WeakAuras or Plater integration hooks.
+- More granular damage schools or external healing tracking.
 
 ## Credits & References
 

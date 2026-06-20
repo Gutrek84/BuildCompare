@@ -28,13 +28,16 @@ If the exact table fields returned by `GetCombatSessionFromType` differ from cur
 
 ## Project-Specific Conventions for This Addon
 - Focus on **tank metrics**: damage taken (DT / DTPS), healing done/received + absorbs where exposed. Lower DT with comparable or better healing = winning build for the same content.
-- Build identification: always snapshot `GetCombatRating(CR_*)` + spec at the moment the run is recorded. Allow free-text user label.
+- **New metrics**: Absorbs, damageBreakdown (physical/magic etc.), defensiveCDsUsed (list of spellId/name/timestamp for known tank defensives).
+- Auto-recording: Use CHALLENGE_MODE_START/COMPLETED and ENCOUNTER_START/END (success==1). Maintain an `activeRun` state in Core.lua for during-run CD tracking and label/stats snapshot.
+- Build identification: always snapshot `GetCombatRating(CR_*)` + spec at the moment the run is recorded (prefer initial snapshot from activeRun). Allow free-text user label.
 - Instance context: store `GetInstanceInfo()` + `C_ChallengeMode.GetActiveKeystoneInfo()` (key level). Make M+ the primary happy path (Skyreach +10 etc.).
-- Comparison output: always surface raw numbers + clear % deltas. Color code (green = better for tank survivability when lower DT).
-- UI philosophy: mimic the built-in / Details!-style meter (StatusBar bars, clean text, movable window) so it feels native. Keep it simple and fast.
+- Comparison output: always surface raw numbers + clear % deltas. Color code (green = better for tank survivability when lower DT). Support multi-select via UI.
+- UI philosophy: mimic the built-in / Details!-style meter (StatusBar bars, clean text, movable window) + filters and side-by-side comparison table. Keep it simple and fast.
 - Data volume: hundreds of runs max is fine. Prune old ones or add export/delete UI later.
 - No external library dependencies in the base version (pure Blizzard UI). Ace3 / AceGUI / LibDataBroker can be offered as an optional enhancement later.
-- Keep Core.lua for data & logic, UI.lua for frames, Utils.lua for pure helpers. This separation makes future Grok edits easier.
+- Keep Core.lua for data & logic (including events for auto + CDs), UI.lua for frames + filters + table, Utils.lua for pure helpers. This separation makes future Grok edits easier.
+- **Never add raw CLEU** even for CD tracking — use UNIT_SPELLCAST_SUCCEEDED / UNIT_AURA for defensives.
 
 ## When Editing
 - After any change to .toc or Lua, the user must `/reload` in-game to test.

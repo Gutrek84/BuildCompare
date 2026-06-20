@@ -64,7 +64,12 @@ function BuildCompare_GetMeterSessionSummary(session)
         if actor.name == playerName or actor.unitName == playerName then
             sum.dt = actor.damageTaken or actor.totalDamageTaken or actor.dt or 0
             sum.healing = actor.healingDone or actor.totalHealing or actor.heal or 0
-            -- sum.absorbs = actor.absorbs or actor.totalAbsorbs or 0
+            sum.absorbs = actor.totalAbsorbs or actor.absorbs or actor.absorb or 0
+
+            sum.damageBreakdown = {
+                physical = actor.damageTakenPhysical or actor.physicalDamageTaken or 0,
+                magic = actor.damageTakenMagic or actor.spellDamageTaken or 0,
+            }
             break
         end
     end
@@ -82,4 +87,30 @@ function BuildCompare_GetRunLabel(run)
     if not run then return "?" end
     local key = run.keyLevel > 0 and ("+" .. run.keyLevel) or ""
     return string.format("%s %s %s (%s)", run.instance, run.difficulty, key, run.buildLabel)
+end
+
+function BuildCompare_FormatDefensives(run)
+    local cds = run.defensiveCDsUsed or {}
+    if #cds == 0 then return "none" end
+    return #cds .. " used"
+    -- Could expand to list names if wanted: table.concat names
+end
+
+function BuildCompare_FormatDamageBreakdown(run)
+    local db = run.damageBreakdown or {}
+    if (db.physical or 0) + (db.magic or 0) == 0 then return "" end
+    return string.format("Phys: %d / Magic: %d", db.physical or 0, db.magic or 0)
+end
+
+-- Format a single stat line for comparison: "Mastery      | 24500 vs 19800 | +23.7%"
+function BuildCompare_FormatStatDelta(label, valA, valB)
+    local a = valA or 0
+    local b = valB or 0
+    local diff = BuildCompare_FormatPercentDiff(a, b)
+    return string.format("%-12s | %8s vs %8s | %s", label, tostring(a), tostring(b), diff)
+end
+
+-- Optional header for stat section
+function BuildCompare_GetStatDeltaHeader()
+    return "Stat         |      A vs      B | % Diff"
 end
