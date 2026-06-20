@@ -1,0 +1,11 @@
+## Interface: 120000
+## Title: BuildCompare
+## Notes: Tank build & stat comparison using the built-in damage meter (C_DamageMeter API, post-Midnight 12.0). Compare DT/H across runs, builds, and instances (e.g. Skyreach +10 mastery vs crit).
+## Author: Owner (via Grok)
+## Version: 0.1.0
+## SavedVariables: BuildCompareDB
+## SavedVariablesPerCharacter: BuildCompareCharDB
+
+Core.lua
+Utils.lua
+UI.lua
