@@ -89,6 +89,7 @@ If you want to keep improving this with AI assistance later:
   - Absorbs captured from the built-in meter.
   - Damage type breakdown (physical / magic at minimum; inspect C_DamageMeter for more).
   - Defensive cooldown tracking (Barkskin, Survival Instincts, Shield Wall, Icebound Fortitude, Anti-Magic Shell, Blessing of Protection, etc.). Logged via cast events during the run and shown in comparisons.
+  - **Talent tracking**: When a run starts (M+ / boss pull or manual record), we snapshot your active talent loadout name + the list of selected talents using the modern `C_Traits` API. In the comparison view you can now see exactly which talents were different between two runs (even with identical gear/stats), so you can measure the impact of specific talent choices on your DT/healing.
 
 Old saved runs remain fully compatible.
 

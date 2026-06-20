@@ -356,6 +356,39 @@ function BuildCompare_RefreshUI()
             table.insert(lines, string.format("%-12s | %8s vs %8s |", "Spec", sa.specName or sa.spec or "?", sb.specName or sb.spec or "?"))
         end
 
+        -- === Talent Comparison ===
+        local ta = a.talents or { loadoutName = "?", selected = {} }
+        local tb = b.talents or { loadoutName = "?", selected = {} }
+
+        table.insert(lines, "")
+        table.insert(lines, "Talents (same gear, different talents comparison):")
+        table.insert(lines, string.format("Loadout A: %s    vs    Loadout B: %s", ta.loadoutName or "?", tb.loadoutName or "?"))
+
+        -- Build sets for diff
+        local setA = {}
+        for _, name in ipairs(ta.selected or {}) do setA[name] = true end
+        local setB = {}
+        for _, name in ipairs(tb.selected or {}) do setB[name] = true end
+
+        local onlyA = {}
+        local onlyB = {}
+        for name in pairs(setA) do
+            if not setB[name] then table.insert(onlyA, name) end
+        end
+        for name in pairs(setB) do
+            if not setA[name] then table.insert(onlyB, name) end
+        end
+
+        if #onlyA > 0 then
+            table.insert(lines, "Talents only in A: " .. table.concat(onlyA, ", "))
+        end
+        if #onlyB > 0 then
+            table.insert(lines, "Talents only in B: " .. table.concat(onlyB, ", "))
+        end
+        if #onlyA == 0 and #onlyB == 0 then
+            table.insert(lines, "Talent selections are identical between the two runs.")
+        end
+
         frame.compareText:SetText(table.concat(lines, "\n"))
     else
         frame.compareText:SetText("Select 2+ runs using the 'Sel' buttons on the left of list rows to see detailed side-by-side comparison (performance + build stat deltas with % diffs).")

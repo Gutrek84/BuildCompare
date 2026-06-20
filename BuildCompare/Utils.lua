@@ -114,3 +114,56 @@ end
 function BuildCompare_GetStatDeltaHeader()
     return "Stat         |      A vs      B | % Diff"
 end
+
+-- Snapshot current active talents using the modern C_Traits API (Midnight+ / 12.0+).
+-- Returns a table with loadoutName and a sorted list of selected talent names.
+-- This lets us compare "same gear, different talents" runs.
+function BuildCompare_SnapshotTalents()
+    local result = {
+        loadoutName = "Unknown Loadout",
+        selected = {},
+    }
+
+    if not C_Traits or not C_Traits.GetActiveConfigID then
+        return result
+    end
+
+    local configID = C_Traits.GetActiveConfigID()
+    if not configID then
+        return result
+    end
+
+    -- Get the loadout name if the player has named it
+    local configInfo = C_Traits.GetConfigInfo and C_Traits.GetConfigInfo(configID)
+    if configInfo and configInfo.name then
+        result.loadoutName = configInfo.name
+    end
+
+    -- Get the talent tree and selected nodes
+    local treeInfo = C_Traits.GetTreeInfo and C_Traits.GetTreeInfo(configID)
+    if not treeInfo or not treeInfo.nodes then
+        return result
+    end
+
+    for _, nodeID in ipairs(treeInfo.nodes) do
+        local nodeInfo = C_Traits.GetNodeInfo and C_Traits.GetNodeInfo(configID, nodeID)
+        if nodeInfo and nodeInfo.activeEntry and nodeInfo.activeEntry.entryID then
+            local entryInfo = C_Traits.GetEntryInfo and C_Traits.GetEntryInfo(configID, nodeInfo.activeEntry.entryID)
+            if entryInfo and entryInfo.definitionID then
+                local defInfo = C_Traits.GetDefinitionInfo and C_Traits.GetDefinitionInfo(entryInfo.definitionID)
+                if defInfo and defInfo.spellID then
+                    local spellName = GetSpellInfo(defInfo.spellID)
+                    if spellName then
+                        table.insert(result.selected, spellName)
+                    else
+                        table.insert(result.selected, "SpellID:" .. defInfo.spellID)
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(result.selected)
+    return result
+end
+

@@ -29,7 +29,8 @@ If the exact table fields returned by `GetCombatSessionFromType` differ from cur
 ## Project-Specific Conventions for This Addon
 - Focus on **tank metrics**: damage taken (DT / DTPS), healing done/received + absorbs where exposed. Lower DT with comparable or better healing = winning build for the same content.
 - **New metrics**: Absorbs, damageBreakdown (physical/magic etc.), defensiveCDsUsed (list of spellId/name/timestamp for known tank defensives).
-- Auto-recording: Use CHALLENGE_MODE_START/COMPLETED and ENCOUNTER_START/END (success==1). Maintain an `activeRun` state in Core.lua for during-run CD tracking and label/stats snapshot.
+- **Talent tracking**: Always snapshot talents at run start using `BuildCompare_SnapshotTalents()` (in Utils.lua, using `C_Traits`). Store under `talents = { loadoutName, selected = { "Talent Name", ... } }` in the record. In UI comparison, compute and display talents only in A vs only in B. This is critical for the "same gear, different talents" use case.
+- Auto-recording: Use CHALLENGE_MODE_START/COMPLETED and ENCOUNTER_START/END (success==1). Maintain an `activeRun` state in Core.lua for during-run CD tracking and label/stats/talents snapshot.
 - Build identification: always snapshot `GetCombatRating(CR_*)` + spec at the moment the run is recorded (prefer initial snapshot from activeRun). Allow free-text user label.
 - Instance context: store `GetInstanceInfo()` + `C_ChallengeMode.GetActiveKeystoneInfo()` (key level). Make M+ the primary happy path (Skyreach +10 etc.).
 - Comparison output: always surface raw numbers + clear % deltas. Color code (green = better for tank survivability when lower DT). Support multi-select via UI.

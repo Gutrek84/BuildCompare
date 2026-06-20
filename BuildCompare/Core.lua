@@ -97,6 +97,7 @@ local function StartActiveRun(buildLabel)
         keyLevel = keyLevel or 0,
         buildLabel = buildLabel or "Auto",
         initialStats = SnapshotPlayerStats(),
+        initialTalents = BuildCompare_SnapshotTalents(),
         defensiveCDsUsed = {},
     }
     Print("Active run tracking started for " .. (activeRun.instance or "") .. " (" .. (activeRun.buildLabel or "") .. ")")
@@ -202,6 +203,7 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         keyLevel = keyLevel or (activeRun and activeRun.keyLevel) or 0,
         buildLabel = buildLabel,
         stats = stats,
+        talents = (activeRun and activeRun.initialTalents) or BuildCompare_SnapshotTalents(),
         dt = meterSummary and meterSummary.dt or 0,
         dtps = meterSummary and meterSummary.dtps or 0,
         healing = meterSummary and meterSummary.healing or 0,
