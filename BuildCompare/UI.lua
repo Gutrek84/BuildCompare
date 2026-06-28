@@ -348,9 +348,28 @@ function BuildCompare_CreateMainFrame()
                 mb:ClearAllPoints()
                 mb:SetPoint("TOPRIGHT", cb, "TOPLEFT", -1, 0)  -- 1px gap, same top, left of X
 
-                mb:SetNormalTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
-                mb:SetPushedTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Down")
-                mb:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight")
+                local function CopyButtonTexture(src, dest, setType)
+                    if not src or not dest then return end
+                    local atlas = src:GetAtlas()
+                    if atlas then
+                        local setAtlas = dest["Set" .. setType .. "Atlas"]
+                        if setAtlas then
+                            setAtlas(dest, atlas)
+                        end
+                    else
+                        local tex = src:GetTexture()
+                        if tex then
+                            local setTex = dest["Set" .. setType .. "Texture"]
+                            if setTex then
+                                setTex(dest, tex)
+                            end
+                        end
+                    end
+                end
+
+                CopyButtonTexture(cb:GetNormalTexture(), mb, "Normal")
+                CopyButtonTexture(cb:GetPushedTexture(), mb, "Pushed")
+                CopyButtonTexture(cb:GetHighlightTexture(), mb, "Highlight")
 
                 local normText = mb:GetNormalTexture()
                 if normText then normText:SetAllPoints(mb) end
