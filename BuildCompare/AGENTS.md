@@ -5,7 +5,7 @@ These rules apply whenever Grok (or any agent) works on this addon or the Lua fi
 ## Hybrid Combat Data Sourcing (Retail & Classic compatibility) - Streamlined
 - **PRIMARY: C_DamageMeter only for 12.0+**: Query `C_DamageMeter` (GetCombatSessionFromType / GetCombatSessionFromID + IsDamageMeterAvailable, using Enum.DamageMeterSessionType.Overall/Current + Enum.DamageMeterType.*) for all combat metrics (DT + AvoidableDT, healing, damage, interrupts, dispels, deaths, etc.). Prefer Overall for M+/full content. For short/solo content we lock all metrics to the same recent sessionID from GetAvailableCombatSessions() for consistency.
 - If `C_DamageMeter` is unavailable or returns no data for the player (very old clients, certain dummy scenarios, pre-12.0), we still record what we safely can from other Blizzard APIs: instance info, stats snapshot (GetCombatRating etc.), talents (C_Traits/C_ClassTalents), defensives used (UNIT_SPELLCAST_SUCCEEDED), deaths (PLAYER_DEAD), duration, build label. No raw CLEU (restricted), no external addon (Details etc.) dependency.
-- Per user request: dropped metrics we can't reliably get direct from WoW (e.g. overhealing). Kept tank-focused + key aggregates.
+- Per user request: dropped metrics we can't reliably get direct from WoW (e.g. overhealing). Kept key performance aggregates for all specs.
 - This keeps the addon lightweight and future-proof for 12.x+ retail while allowing basic use elsewhere.
 
 ## General WoW Lua / Addon Hygiene
@@ -20,7 +20,7 @@ These rules apply whenever Grok (or any agent) works on this addon or the Lua fi
 - Versioning: bump the Version line in .toc on meaningful changes.
 
 ## Project-Specific Conventions for This Addon
-- Focus on **tank metrics**: damage taken (DT / DTPS + Avoidable DT/DTPS), healing done, defensive cooldown usage. Lower (avoidable) DT with comparable or better healing = winning build for the same content.
+- Focus on **all-spec metrics**: damage done (Dmg / DPS), healing done (Heal / HPS), damage taken (DT / DTPS + Avoidable DT/DTPS), and defensive/offensive cooldown usage. Higher damage/healing with lower avoidable damage taken = winning build for the same content.
 - **Tracked from API**: Direct C_DamageMeter categories only (DamageTaken, AvoidableDamageTaken, HealingDone, DamageDone, Interrupts, Dispels, Deaths, Hps/Dps etc.). Plus cast-tracked defensiveCDsUsed (via UNIT_SPELLCAST_SUCCEEDED — the only cast tracking we keep for streamlining).
 - **Talent tracking**: Always snapshot talents at run start using `BuildCompare_SnapshotTalents()` (in Utils.lua, using `C_Traits`). Store under `talents = { loadoutName, selected = { "Talent Name", ... } }` in the record. In UI comparison, compute and display talents only in A vs only in B. This is critical for the "same gear, different talents" use case.
 - Auto-recording: Use CHALLENGE_MODE_START/COMPLETED and ENCOUNTER_START/END (success==1). Maintain an `activeRun` state in Core.lua for during-run CD tracking and label/stats/talents snapshot.
@@ -54,7 +54,7 @@ This ensures full visibility for long tasks like the 4 bug fixes (overlapping co
 
 ## Future-Proofing Notes
 - Watch warcraft.wiki.gg for C_DamageMeter and combat API updates after every major patch.
-- If Blizzard ever expands the built-in meter with more tank-specific categories (more granular mitigation, damage schools on sources, etc.), prefer consuming those over custom calculations.
+- If Blizzard ever expands the built-in meter with more spec-specific categories (more granular mitigation, damage schools on sources, etc.), prefer consuming those over custom calculations.
 - The goal is **personal build experimentation for one player**, not a raid-wide or competitive logging tool. Keep scope tight.
 
 ## Implementation Status (as of 0.3.1)

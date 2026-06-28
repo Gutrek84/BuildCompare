@@ -1,8 +1,8 @@
-# BuildCompare — WoW Tank Build & Stat Comparison Addon
+# BuildCompare — WoW Build & Stat Comparison Addon
 
 Compare different talent/stat builds (mastery-heavy vs crit-heavy etc.) using data from the **built-in damage meter** (C_DamageMeter API introduced in the 2026 Midnight pre-expansion / patch 12.0).
 
-## What it does (for tanks)
+## What it does
 
 - After a Mythic+ or raid pull, record a run with a build label + automatic stat snapshot (mastery/crit/haste/vers).
 - Pulls DT (damage taken), DTPS, healing done, HPS from the official built-in meter sessions — **no raw CLEU parsing** (which was removed/restricted in 12.0).
@@ -88,9 +88,9 @@ If you want to keep improving this with AI assistance later:
 ## Features Implemented (this update)
 
 - **Dropdown-style filters** (Instance / Key Level / Build label) — click the buttons in the UI to cycle through available values + "All". List updates live.
-- **Better run comparison table** — "Sel" buttons on run rows let you pick runs. Bottom panel shows detailed side-by-side comparison (DT + AvoidableDT, DTPS, Healing, Def CDs, aggregate Damage/Healing, interrupts/dispels/deaths) **plus Build Stats deltas** (Mastery/Crit/Haste/Vers ratings and % with raw deltas and % change columns) and talent differences so you can directly see how stat allocation + talent choices affected your tanking performance.
+- **Better run comparison table** — "Sel" buttons on run rows let you pick runs. Bottom panel shows detailed side-by-side comparison (DT + AvoidableDT, DTPS, Healing, Def CDs, aggregate Damage/Healing, interrupts/dispels/deaths) **plus Build Stats deltas** (Mastery/Crit/Haste/Vers ratings and % with raw deltas and % change columns) and talent differences so you can directly see how stat allocation + talent choices affected your performance.
 - **Auto record on M+ completion / boss kill / delve** — Automatically tracks on CHALLENGE_MODE_START / ENCOUNTER_START and records on completion. Delves are now supported as trackable content (the whole delve instance is one run; individual mob packs no longer create spammy solo records).
-- **Pure native meter support (no external addons)**: All combat metrics (DT + AvoidableDT/DTPS, healing/HPS, damage/DPS, interrupts, dispels, deaths) come directly from the built-in `C_DamageMeter` API (12.0+ Midnight) via the exposed Enum.DamageMeterType values. For content where the meter has no session data, the record still captures build stats, talents, defensive CDs used (via allowed UNIT_SPELLCAST events), instance info, etc. Streamlined: removed Absorbs (frequently duplicative or not isolated per-pull), removed broad DPS/Healing CD cast tracking (only tank-relevant defensives kept for focus and code size), dropped overhealing.
+- **Pure native meter support (no external addons)**: All combat metrics (DT + AvoidableDT/DTPS, healing/HPS, damage/DPS, interrupts, dispels, deaths) come directly from the built-in `C_DamageMeter` API (12.0+ Midnight) via the exposed Enum.DamageMeterType values. For content where the meter has no session data, the record still captures build stats, talents, defensive CDs used (via allowed UNIT_SPELLCAST events), instance info, etc. Streamlined: removed Absorbs (frequently duplicative or not isolated per-pull), removed broad DPS/Healing CD cast tracking (only defensive CDs kept for focus and code size), dropped overhealing.
 - **More metrics**:
   - Avoidable Damage Taken (direct from C_DamageMeter type 8) — critical for evaluating how much DT was actually avoidable/mitigable by the build.
   - Defensive cooldown tracking (Barkskin, Survival Instincts, Shield Wall, Icebound Fortitude, Anti-Magic Shell, Blessing of Protection, etc.). Logged via cast events during the run and shown in comparisons (only defensives; other CD categories removed to streamline).

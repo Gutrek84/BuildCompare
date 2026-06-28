@@ -764,10 +764,10 @@ function BuildCompare_RefreshUI()
 
         -- === Performance metrics (aligned rows) ===
 
-        -- Tank survivability
-        addSection("|cFFFFD100Tank Surv & Mit:|r")
+        -- Survivability & Mitigation
+        addSection("|cFFFFD100Surv & Mit:|r")
 
-        -- DT (lower better for tank, but higher number still greens per user request)
+        -- DT (lower is generally better, but higher raw number still greens per user request)
         local na, nb = a.dt or 0, b.dt or 0
         local ta, tb
         if IsSecret(na) then

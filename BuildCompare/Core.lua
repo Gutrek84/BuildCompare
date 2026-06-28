@@ -16,7 +16,7 @@ local currentCombat = nil
 BuildCompare_LastCombatSegment = nil
 local playerGUID = nil
 
--- Common tank defensive cooldowns (spellID -> name). Expand as needed for your spec.
+-- Common defensive cooldowns (spellID -> name). Expand as needed for your spec.
 local DEFENSIVE_CDS = {
     -- Druid
     [22812] = "Barkskin",
@@ -82,7 +82,7 @@ _G.BuildCompareData = {
 }
 
 -- (DPS_CDS and HEALING_CDS tables removed for streamlining.
--- The addon now focuses on tank metrics. We only track defensive cooldown usage via UNIT_SPELLCAST_SUCCEEDED.
+-- The addon tracks performance metrics for any spec. We track defensive cooldown usage via UNIT_SPELLCAST_SUCCEEDED.
 -- All aggregate damage/healing numbers come directly from C_DamageMeter.)
 
 -- Simple print helper
@@ -364,7 +364,7 @@ local function LogDefensiveCD(spellId, spellName)
 end
 
 -- (LogDPSCD and LogHealingCD removed as part of streamlining.
--- Only defensive CDs are tracked for the tank-focused design.)
+-- Only defensive CDs are tracked for defensive usage.)
 
 -- End tracking and auto-record if we have data
 local function EndActiveRunAndRecord(reason)
@@ -805,7 +805,7 @@ local function OnCombatEvent(self, event, ...)
         local unit, castGUID, spellID = ...
         if unit == "player" then
             LogDefensiveCD(spellID)
-            -- Only tracking defensive CDs for tank focus (DPS/Healing CD lists removed for streamlining)
+            -- Only tracking defensive CDs (DPS/Healing CD lists removed for streamlining)
         end
     elseif event == "PLAYER_DEAD" then
         if activeRun then
