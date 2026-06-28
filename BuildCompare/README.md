@@ -111,5 +111,3 @@ Old saved runs remain fully compatible.
 - Official addon creation: https://warcraft.wiki.gg/wiki/Create_a_WoW_AddOn_in_15_Minutes
 - 12.0 API changes (C_DamageMeter): https://warcraft.wiki.gg/wiki/Patch_12.0.0/API_changes
 - Community discussion on the new damage data model (EpicDamageMeter, reddit r/wowaddondev, etc.).
-
-Made with Grok Build in plan + implement mode. Have fun comparing those mastery vs crit pulls on Skyreach!
