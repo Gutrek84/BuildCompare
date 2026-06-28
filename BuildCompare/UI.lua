@@ -307,15 +307,13 @@ function BuildCompare_CreateMainFrame()
 
     -- Minimize button. We create it early but position + size it in the delayed block
     -- so it can perfectly match the template's CloseButton (X) and sit right next to it.
-    local minBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    local minBtn = CreateFrame("Button", nil, frame)
     minBtn:SetSize(20, 20)  -- default; will be overridden to exactly match the X
-    minBtn:SetText("–")  -- en-dash for cleaner minimize look
     minBtn:SetScript("OnClick", function()
         if _G.BuildCompare_ShowMiniCurrent then _G.BuildCompare_ShowMiniCurrent() end
         frame:Hide()
     end)
     frame.minBtn = minBtn
-    -- We'll re-center the text after sizing/anchoring in the timer below.
 
     -- Safely override the template X close button's handler (delayed for layout) with plain Hide()
     -- to prevent "Interface action failed because of an AddOn" taint errors.
@@ -350,14 +348,22 @@ function BuildCompare_CreateMainFrame()
                 mb:ClearAllPoints()
                 mb:SetPoint("TOPRIGHT", cb, "TOPLEFT", -1, 0)  -- 1px gap, same top, left of X
 
-                -- Center the text (– or -) perfectly inside the now-matched size button
-                local fs = mb:GetFontString()
-                if fs then
-                    fs:ClearAllPoints()
-                    -- Slight vertical nudge (0 or -1) often looks better on 18-24px title buttons
-                    fs:SetPoint("CENTER", 0, 0)
-                    -- Use a slightly smaller font object so the symbol fits cleanly without crowding the edges
-                    fs:SetFontObject("GameFontNormalSmall")
+                mb:SetNormalTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
+                mb:SetPushedTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Down")
+                mb:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight")
+
+                if not mb.mask then
+                    mb.mask = mb:CreateTexture(nil, "OVERLAY", nil, 1)
+                    mb.mask:SetSize(10, 10)
+                    mb.mask:SetPoint("CENTER", mb, "CENTER", 0, 0)
+                    mb.mask:SetColorTexture(0.42, 0.05, 0.05, 1)
+                end
+
+                if not mb.minusLine then
+                    mb.minusLine = mb:CreateTexture(nil, "OVERLAY", nil, 2)
+                    mb.minusLine:SetSize(10, 2)
+                    mb.minusLine:SetPoint("CENTER", mb, "CENTER", 0, 0)
+                    mb.minusLine:SetColorTexture(0.9, 0.8, 0.1, 1)
                 end
 
                 -- Tooltip for clarity (matches normal window behavior)
@@ -525,10 +531,10 @@ end
 -- aIsGreen / bIsGreen: embed green color on the higher side's value.
 -- Header rows use isHeader=true and put run labels in the A/B slots.
 -- ============================================================
-local LABEL_W = 52
-local A_W = 160
-local B_W = 160
-local DIFF_W = 70
+local LABEL_W = 106
+local A_W = 106
+local B_W = 106
+local DIFF_W = 106
 
 local function CreateAlignedCompareRow(parent, y, isHeader, metric, aVal, bVal, diffVal, aIsGreen, bIsGreen)
     local rowH = isHeader and 17 or 14
