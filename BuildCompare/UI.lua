@@ -378,7 +378,7 @@ function BuildCompare_CreateMainFrame()
                 local hlText = mb:GetHighlightTexture()
                 if hlText then hlText:SetAllPoints(mb) end
 
-                local maskSize = math.floor(size * 0.45)
+                local maskSize = math.floor(size * 0.72)
                 local lineW = math.floor(size * 0.45)
                 local lineH = math.max(2, math.floor(size * 0.08))
 
