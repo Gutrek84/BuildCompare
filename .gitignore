@@ -1,0 +1,11 @@
+# Ignore local backups
+BuildCompare old/
+BuildCompare_Backup/
+
+# Ignore AI agent configurations and files
+AGENTS.md
+BuildCompare/AGENTS.md
+.agents/
+
+# Ignore AI composer logs
+composer_logs/
