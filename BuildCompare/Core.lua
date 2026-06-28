@@ -15,6 +15,30 @@ local activeRun = nil
 local currentCombat = nil
 BuildCompare_LastCombatSegment = nil
 local playerGUID = nil
+local lastCleanStats = nil
+
+-- Tracked Buffs & Cooldowns for Uptime Tracking
+local TRACKED_BUFF_CDS = {
+    -- Weapon enchants
+    [369962] = "Sophic Devotion",
+    [370701] = "Shadowflame Wreathe",
+    [371131] = "Wafting Devotion",
+    -- Cooldowns
+    [31884] = "Avenging Wrath",
+    [231895] = "Crusade",
+    [389539] = "Sentinel",
+    [107574] = "Avatar",
+    [190319] = "Combustion",
+    [162264] = "Metamorphosis",
+    [1719] = "Recklessness",
+    [114050] = "Ascendance",
+    [114051] = "Ascendance",
+    [114052] = "Ascendance",
+    -- Bloodlust
+    [2825] = "Bloodlust",
+    [80353] = "Time Warp",
+    [32182] = "Heroism",
+}
 
 -- Common defensive cooldowns (spellID -> name). Expand as needed for your spec.
 local DEFENSIVE_CDS = {
@@ -269,7 +293,7 @@ local function IsTrackableContent()
     return false
 end
 
--- Snapshot relevant player stats for the "build"
+-- -- Snapshot relevant player stats for the "build"
 local function SnapshotPlayerStats()
     local stats = {}
     
@@ -286,7 +310,17 @@ local function SnapshotPlayerStats()
     stats.vers = ok and value or 0
 
     stats.masteryPct = GetMastery() or 0
-    stats.critPct = GetCritChance() or 0
+    
+    -- School 1 to 7 spell crit check combined with standard crit chance
+    local maxCrit = GetCritChance() or 0
+    for school = 1, 7 do
+        local critChance = GetSpellCritChance(school)
+        if critChance and critChance > maxCrit then
+            maxCrit = critChance
+        end
+    end
+    stats.critPct = maxCrit
+    
     stats.hastePct = GetHaste() or 0
     
     ok, value = pcall(GetCombatRatingBonus, CR_VERSATILITY_DAMAGE_DONE)
@@ -295,6 +329,10 @@ local function SnapshotPlayerStats()
     stats.dodgePct = GetDodgeChance() or 0
     stats.parryPct = GetParryChance() or 0
     stats.blockPct = GetBlockChance() or 0
+
+    stats.strength = UnitStat("player", 1) or 0
+    stats.agility = UnitStat("player", 2) or 0
+    stats.intellect = UnitStat("player", 4) or 0
 
     stats.class = UnitClass("player") or "Unknown"
     
@@ -310,6 +348,23 @@ local function SnapshotPlayerStats()
     return stats
 end
 
+-- Out-of-combat stats caching
+local statCacheFrame = CreateFrame("Frame")
+statCacheFrame:RegisterEvent("PLAYER_LOGIN")
+statCacheFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+statCacheFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+statCacheFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+statCacheFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+statCacheFrame:SetScript("OnEvent", function(self, event, ...)
+    if not InCombatLockdown() then
+        C_Timer.After(0.5, function()
+            if not InCombatLockdown() then
+                lastCleanStats = SnapshotPlayerStats()
+            end
+        end)
+    end
+end)
+
 -- Start tracking an active run (called on M+ start or boss pull)
 local function StartActiveRun(buildLabel)
     if not IsTrackableContent() then return end
@@ -321,11 +376,13 @@ local function StartActiveRun(buildLabel)
         difficulty = diffName or "Unknown",
         keyLevel = keyLevel or 0,
         buildLabel = buildLabel or "Auto",
-        initialStats = SnapshotPlayerStats(),
+        initialStats = lastCleanStats or SnapshotPlayerStats(),
         talents = BuildCompare_SnapshotTalents(),
         defensiveCDsUsed = {},
         dpsCDsUsed = {},
         healingCDsUsed = {},
+        buffDurations = {},
+        activeBuffs = {},
         damage = 0,
         dt = 0,
         healing = 0,
@@ -358,11 +415,13 @@ local function StartCustomRun()
                 keyLevel = 0,
                 runType = "custom",
                 buildLabel = label,
-                initialStats = SnapshotPlayerStats(),
+                initialStats = lastCleanStats or SnapshotPlayerStats(),
                 talents = BuildCompare_SnapshotTalents(),
                 defensiveCDsUsed = {},
                 dpsCDsUsed = {},
                 healingCDsUsed = {},
+                buffDurations = {},
+                activeBuffs = {},
                 damage = 0,
                 dt = 0,
                 healing = 0,
@@ -628,6 +687,8 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         interrupts = recordSource.interrupts,
         dispels = recordSource.dispels,
         deaths = recordSource.deaths,
+        buffDurations = recordSource.buffDurations,
+        activeBuffs = recordSource.activeBuffs,
     }
 
     -- Clear active run and combat segment immediately to allow new runs to start
@@ -678,8 +739,25 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         -- (Removed solo auto-run logic per narrowed scope; no more per-pack dummy/delve/outdoor records)
 
         local buildLabel = optionalLabel or capturedSource.buildLabel or ("Build " .. date("%H%M"))
-        local stats = SnapshotPlayerStats()
+        local stats = capturedSource.initialStats or lastCleanStats or SnapshotPlayerStats()
         local ts = time()
+
+        -- Calculate buff/cooldown uptimes
+        local buffUptimes = {}
+        local runDuration = duration
+        if runDuration > 0 then
+            local bDurations = capturedSource.buffDurations or {}
+            local actBuffs = capturedSource.activeBuffs or {}
+            for spellID, start in pairs(actBuffs) do
+                local dur = time() - start
+                bDurations[spellID] = (bDurations[spellID] or 0) + dur
+            end
+            for spellID, dur in pairs(bDurations) do
+                local pct = (dur / runDuration) * 100
+                if pct > 100 then pct = 100 end
+                buffUptimes[spellID] = pct
+            end
+        end
 
         local record = {
             id = ts .. "-" .. (keyLevel or capturedSource.keyLevel or 0),
@@ -706,6 +784,7 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
             defensiveCDsUsed = defensiveCDsUsed,
             dpsCDsUsed = dpsCDsUsed,
             healingCDsUsed = healingCDsUsed,
+            buffUptimes = buffUptimes,
             meterSessionId = isOverall and "overall" or "current",
         }
 
@@ -857,6 +936,8 @@ local function OnCombatEvent(self, event, ...)
                 interrupts = activeRun.interrupts,
                 dispels = activeRun.dispels,
                 deaths = activeRun.deaths,
+                buffDurations = activeRun.buffDurations,
+                activeBuffs = activeRun.activeBuffs,
             }
         end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -867,6 +948,30 @@ local function OnCombatEvent(self, event, ...)
     elseif event == "PLAYER_DEAD" then
         if activeRun then
             activeRun.deaths = (activeRun.deaths or 0) + 1
+        end
+    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        if not playerGUID then
+            playerGUID = UnitGUID("player")
+        end
+        local _, subevent, _, sourceGUID, _, _, _, destGUID, _, _, _, spellID = CombatLogGetCurrentEventInfo()
+        if destGUID == playerGUID then
+            if subevent == "SPELL_AURA_APPLIED" then
+                if TRACKED_BUFF_CDS[spellID] and activeRun then
+                    activeRun.activeBuffs = activeRun.activeBuffs or {}
+                    activeRun.activeBuffs[spellID] = time()
+                end
+            elseif subevent == "SPELL_AURA_REMOVED" then
+                if TRACKED_BUFF_CDS[spellID] and activeRun then
+                    activeRun.activeBuffs = activeRun.activeBuffs or {}
+                    activeRun.buffDurations = activeRun.buffDurations or {}
+                    local start = activeRun.activeBuffs[spellID]
+                    if start then
+                        local dur = time() - start
+                        activeRun.buffDurations[spellID] = (activeRun.buffDurations[spellID] or 0) + dur
+                        activeRun.activeBuffs[spellID] = nil
+                    end
+                end
+            end
         end
     end
 end
@@ -883,6 +988,7 @@ f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("PLAYER_DEAD")
+f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 f:SetScript("OnEvent", function(self, event, arg1, ...)
     if event == "ADDON_LOADED" and arg1 == AddonName then
         BuildCompareDB = BuildCompareDB or { runs = {}, settings = {} }

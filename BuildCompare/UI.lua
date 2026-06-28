@@ -916,7 +916,7 @@ function BuildCompare_RefreshUI()
         tb = BuildCompare_FormatNumber(nb)
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Deaths", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 60)
+        addRow("Deaths", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 50)
 
         -- Section 5: Stats
         addSection("|cFFFFD100Stats:|r", 6)
@@ -924,37 +924,69 @@ function BuildCompare_RefreshUI()
         local saStats = a.stats or {}
         local sbStats = b.stats or {}
 
-        -- Mastery
-        na, nb = saStats.mastery or 0, sbStats.mastery or 0
+        -- Strength
+        na, nb = saStats.strength or 0, sbStats.strength or 0
         ta = BuildCompare_FormatNumber(na)
         tb = BuildCompare_FormatNumber(nb)
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Mastery", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
+        addRow("Strength", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+
+        -- Agility
+        na, nb = saStats.agility or 0, sbStats.agility or 0
+        ta = BuildCompare_FormatNumber(na)
+        tb = BuildCompare_FormatNumber(nb)
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
+        addRow("Agility", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+
+        -- Intellect
+        na, nb = saStats.intellect or 0, sbStats.intellect or 0
+        ta = BuildCompare_FormatNumber(na)
+        tb = BuildCompare_FormatNumber(nb)
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
+        addRow("Intellect", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+
+        -- Mastery
+        local masteryPctA = saStats.masteryPct or 0
+        local masteryPctB = sbStats.masteryPct or 0
+        na, nb = saStats.mastery or 0, sbStats.mastery or 0
+        ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), masteryPctA)
+        tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), masteryPctB)
+        ga = not IsSecret(masteryPctA) and not IsSecret(masteryPctB) and masteryPctA > masteryPctB
+        gb = not IsSecret(masteryPctA) and not IsSecret(masteryPctB) and masteryPctB > masteryPctA
+        addRow("Mastery", masteryPctA, masteryPctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(masteryPctA, masteryPctB), ga, gb, 6)
 
         -- Crit
+        local critPctA = saStats.critPct or 0
+        local critPctB = sbStats.critPct or 0
         na, nb = saStats.crit or 0, sbStats.crit or 0
-        ta = BuildCompare_FormatNumber(na)
-        tb = BuildCompare_FormatNumber(nb)
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Crit", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
+        ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), critPctA)
+        tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), critPctB)
+        ga = not IsSecret(critPctA) and not IsSecret(critPctB) and critPctA > critPctB
+        gb = not IsSecret(critPctA) and not IsSecret(critPctB) and critPctB > critPctA
+        addRow("Crit", critPctA, critPctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(critPctA, critPctB), ga, gb, 6)
 
         -- Haste
+        local hastePctA = saStats.hastePct or 0
+        local hastePctB = sbStats.hastePct or 0
         na, nb = saStats.haste or 0, sbStats.haste or 0
-        ta = BuildCompare_FormatNumber(na)
-        tb = BuildCompare_FormatNumber(nb)
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Haste", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
+        ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), hastePctA)
+        tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), hastePctB)
+        ga = not IsSecret(hastePctA) and not IsSecret(hastePctB) and hastePctA > hastePctB
+        gb = not IsSecret(hastePctA) and not IsSecret(hastePctB) and hastePctB > hastePctA
+        addRow("Haste", hastePctA, hastePctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(hastePctA, hastePctB), ga, gb, 6)
 
         -- Vers
+        local versPctA = saStats.versPct or 0
+        local versPctB = sbStats.versPct or 0
         na, nb = saStats.vers or 0, sbStats.vers or 0
-        ta = BuildCompare_FormatNumber(na)
-        tb = BuildCompare_FormatNumber(nb)
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Vers", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
+        ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), versPctA)
+        tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), versPctB)
+        ga = not IsSecret(versPctA) and not IsSecret(versPctB) and versPctA > versPctB
+        gb = not IsSecret(versPctA) and not IsSecret(versPctB) and versPctB > versPctA
+        addRow("Vers", versPctA, versPctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(versPctA, versPctB), ga, gb, 6)
 
         -- Dodge
         na, nb = saStats.dodgePct or 0, sbStats.dodgePct or 0
@@ -967,7 +999,7 @@ function BuildCompare_RefreshUI()
         end
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Dodge", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
+        addRow("Dodge", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
 
         -- Parry
         na, nb = saStats.parryPct or 0, sbStats.parryPct or 0
@@ -980,7 +1012,7 @@ function BuildCompare_RefreshUI()
         end
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Parry", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
+        addRow("Parry", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
 
         -- Block
         na, nb = saStats.blockPct or 0, sbStats.blockPct or 0
@@ -993,20 +1025,56 @@ function BuildCompare_RefreshUI()
         end
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Block", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
+        addRow("Block", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 18)
 
-        -- Mast %
-        na, nb = saStats.masteryPct or 0, sbStats.masteryPct or 0
-        if IsSecret(na) or IsSecret(nb) then
-            ta = "Pending"
-            tb = "Pending"
-        else
-            ta = string.format("%.1f%%", na)
-            tb = string.format("%.1f%%", nb)
+        -- Section 6: Buffs
+        addSection("|cFFFFD100Buffs:|r", 6)
+
+        local aUptimes = a.buffUptimes or {}
+        local bUptimes = b.buffUptimes or {}
+        local uniqueSpells = {}
+        for spellID in pairs(aUptimes) do
+            uniqueSpells[spellID] = true
         end
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Mast %", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
+        for spellID in pairs(bUptimes) do
+            uniqueSpells[spellID] = true
+        end
+
+        local function GetSpellName(spellID)
+            if not spellID then return "Unknown" end
+            local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
+            return spellInfo and spellInfo.name or ("Spell " .. spellID)
+        end
+
+        local sortedSpells = {}
+        for spellID in pairs(uniqueSpells) do
+            table.insert(sortedSpells, spellID)
+        end
+        table.sort(sortedSpells, function(s1, s2)
+            local name1 = GetSpellName(s1) or ""
+            local name2 = GetSpellName(s2) or ""
+            return name1 < name2
+        end)
+
+        for _, spellID in ipairs(sortedSpells) do
+            local uptimeA = aUptimes[spellID] or 0
+            local uptimeB = bUptimes[spellID] or 0
+            local spellName = GetSpellName(spellID)
+            local txtA = string.format("%.1f%%", uptimeA)
+            local txtB = string.format("%.1f%%", uptimeB)
+            local diffVal = uptimeB - uptimeA
+            local diffTxt
+            if diffVal > 0.05 then
+                diffTxt = string.format("|cFF00FF00+%.1f%%|r", diffVal)
+            elseif diffVal < -0.05 then
+                diffTxt = string.format("|cFFFF3333-%.1f%%|r", math.abs(diffVal))
+            else
+                diffTxt = "|cFFFFFFFF0.0%|r"
+            end
+            local ga = uptimeA > uptimeB
+            local gb = uptimeB > uptimeA
+            addRow(spellName, uptimeA, uptimeB, txtA, txtB, diffTxt, ga, gb, 6)
+        end
 
         -- Resize content for the rows we created + a little padding for scroll
         local finalH = y + 12
