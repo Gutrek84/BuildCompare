@@ -949,27 +949,24 @@ local function OnCombatEvent(self, event, ...)
         if activeRun then
             activeRun.deaths = (activeRun.deaths or 0) + 1
         end
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        if not playerGUID then
-            playerGUID = UnitGUID("player")
-        end
-        local _, subevent, _, sourceGUID, _, _, _, destGUID, _, _, _, spellID = CombatLogGetCurrentEventInfo()
-        if destGUID == playerGUID then
-            if subevent == "SPELL_AURA_APPLIED" then
-                if TRACKED_BUFF_CDS[spellID] and activeRun then
-                    activeRun.activeBuffs = activeRun.activeBuffs or {}
+    elseif event == "UNIT_AURA" then
+        local unit = ...
+        if unit == "player" and activeRun then
+            activeRun.activeBuffs = activeRun.activeBuffs or {}
+            activeRun.buffDurations = activeRun.buffDurations or {}
+            for spellID, _ in pairs(TRACKED_BUFF_CDS) do
+                local aura = C_UnitAuras.GetPlayerAuraBySpellID(spellID)
+                local isActiveNow = (aura ~= nil)
+                local wasActive = (activeRun.activeBuffs[spellID] ~= nil)
+                if isActiveNow and not wasActive then
                     activeRun.activeBuffs[spellID] = time()
-                end
-            elseif subevent == "SPELL_AURA_REMOVED" then
-                if TRACKED_BUFF_CDS[spellID] and activeRun then
-                    activeRun.activeBuffs = activeRun.activeBuffs or {}
-                    activeRun.buffDurations = activeRun.buffDurations or {}
+                elseif not isActiveNow and wasActive then
                     local start = activeRun.activeBuffs[spellID]
                     if start then
                         local dur = time() - start
                         activeRun.buffDurations[spellID] = (activeRun.buffDurations[spellID] or 0) + dur
-                        activeRun.activeBuffs[spellID] = nil
                     end
+                    activeRun.activeBuffs[spellID] = nil
                 end
             end
         end
@@ -988,7 +985,7 @@ f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("PLAYER_DEAD")
-f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+f:RegisterEvent("UNIT_AURA")
 f:SetScript("OnEvent", function(self, event, arg1, ...)
     if event == "ADDON_LOADED" and arg1 == AddonName then
         BuildCompareDB = BuildCompareDB or { runs = {}, settings = {} }
