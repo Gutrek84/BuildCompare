@@ -13,6 +13,21 @@ local function IsSecret(val)
     return issecretvalue(val)
 end
 
+local unboxFrame = CreateFrame("Frame", nil, UIParent)
+local unboxFS = unboxFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+
+function BuildCompare_UnboxSecret(val)
+    if not val then return 0 end
+    if not IsSecret(val) then return tonumber(val) or 0 end
+    
+    unboxFS:SetFormattedText("%.6f", val)
+    local text = unboxFS:GetText()
+    if text then
+        return tonumber(text) or 0
+    end
+    return 0
+end
+
 -- Format large numbers into clean abbreviations (e.g. 1.5k, 15k, 150k, 1.0m, 15m, 150m)
 -- <1000 as integer; for k/m: 1 decimal only if the scaled value is <10, whole number without decimal when >=10 (exact user spec)
 function BuildCompare_FormatNumber(val)
@@ -61,49 +76,34 @@ end
 
 
 -- Format percentage difference (lower value is better, e.g. damage taken)
-function BuildCompare_FormatPercentDiffLowerBetter(a, b)
-    if IsSecret(a) or IsSecret(b) then return "N/A" end
-    a = tonumber(a) or 0
-    b = tonumber(b) or 0
-    if a == 0 and b == 0 then return "0.0%" end
-    if a == 0 then
-        return (b > 0 and "|cFFFF3333+inf%|r" or "0.0%")
-    end
+local function FormatUnsignedWhiteDiff(a, b)
+    a = BuildCompare_UnboxSecret(a)
+    b = BuildCompare_UnboxSecret(b)
+    if a == 0 then return "0.0%" end
     local diff = ((b - a) / a) * 100
-    local sign = diff > 0 and "+" or ""
-    local color = diff < 0 and "|cFF00FF00" or (diff > 0 and "|cFFFF3333" or "|cFFFFFFFF")
-    return string.format("%s%s%.1f%%|r", color, sign, diff)
+    return string.format("%.1f%%", math.abs(diff))
+end
+
+function BuildCompare_FormatPercentDiffLowerBetter(a, b)
+    return FormatUnsignedWhiteDiff(a, b)
 end
 
 -- Format percentage difference (higher value is better, e.g. healing/dps)
 function BuildCompare_FormatPercentDiffHigherBetter(a, b)
-    if IsSecret(a) or IsSecret(b) then return "N/A" end
-    a = tonumber(a) or 0
-    b = tonumber(b) or 0
-    if a == 0 and b == 0 then return "0.0%" end
-    if a == 0 then
-        return (b > 0 and "|cFF00FF00+inf%|r" or "0.0%")
-    end
-    local diff = ((b - a) / a) * 100
-    local sign = diff > 0 and "+" or ""
-    local color = diff > 0 and "|cFF00FF00" or (diff < 0 and "|cFFFF3333" or "|cFFFFFFFF")
-    return string.format("%s%s%.1f%%|r", color, sign, diff)
+    return FormatUnsignedWhiteDiff(a, b)
 end
 
 -- Format percentage difference (neutral, e.g. stats)
 function BuildCompare_FormatPercentDiffNeutral(a, b)
-    if IsSecret(a) or IsSecret(b) then return "N/A" end
-    a = tonumber(a) or 0
-    b = tonumber(b) or 0
-    if a == 0 and b == 0 then return "0.0%" end
-    local diff = ((b - a) / a) * 100
-    local sign = diff > 0 and "+" or ""
-    return string.format("|cFF80EAFF%s%.1f%%|r", sign, diff)
+    return FormatUnsignedWhiteDiff(a, b)
 end
 
 -- Convenience: short label for a run record
 function BuildCompare_GetRunLabel(run)
     if not run then return "?" end
+    if run.runType == "custom" or run.instance == "Custom" or run.difficulty == "Custom" then
+        return run.buildLabel or "Custom Run"
+    end
     local key = ""
     if run.isDelve then
         key = run.keyLevel > 0 and (" Delve+" .. run.keyLevel) or " Delve"

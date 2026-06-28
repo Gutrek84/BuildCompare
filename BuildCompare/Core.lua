@@ -152,6 +152,16 @@ local function IsSecret(val)
     return issecretvalue(val)
 end
 
+local function GetLatestSessionID()
+    if C_DamageMeter and C_DamageMeter.GetAvailableCombatSessions then
+        local sessions = C_DamageMeter.GetAvailableCombatSessions()
+        if sessions and #sessions > 0 then
+            return sessions[#sessions].sessionID
+        end
+    end
+    return nil
+end
+
 local function SafeDiv(a, b)
     if IsSecret(a) or IsSecret(b) then
         return 0
@@ -254,6 +264,29 @@ local function BuildCompare_DebugMeter()
                 if idSess then
                     Print("SessionFromID DT available, sources: " .. #(idSess.combatSources or {}))
                 end
+
+                -- Debug look up player's source for Enum.DamageMeterType.Interrupts
+                local intSess = C_DamageMeter.GetCombatSessionFromID(sessionID, Enum.DamageMeterType.Interrupts)
+                if intSess and intSess.combatSources then
+                    local pGUID = UnitGUID("player")
+                    for _, src in ipairs(intSess.combatSources) do
+                        if src.isLocalPlayer or (pGUID and src.guid == pGUID) then
+                            Print("Player Interrupts Source found in debug:")
+                            for k, v in pairs(src) do
+                                if type(v) == "table" then
+                                    Print(string.format("  src.%s = [table] (size: %d)", tostring(k), #v))
+                                    if k == "combatSpells" then
+                                        for idx, spell in ipairs(v) do
+                                            Print(string.format("    spell[%d]: ID=%s, name=%s, totalAmount=%s", idx, tostring(spell.spellID), tostring(spell.name), tostring(spell.totalAmount)))
+                                        end
+                                    end
+                                else
+                                    Print(string.format("  src.%s = %s", tostring(k), tostring(v)))
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end
     end
@@ -291,6 +324,34 @@ local function IsTrackableContent()
         end
     end
     return false
+end
+
+local function GetHeroSpecName()
+    if not C_ClassTalents or not C_ClassTalents.GetActiveConfigID then
+        return "None"
+    end
+    local configID = C_ClassTalents.GetActiveConfigID()
+    if not configID then
+        return "None"
+    end
+    local configInfo = C_Traits and C_Traits.GetConfigInfo and C_Traits.GetConfigInfo(configID)
+    if configInfo and configInfo.treeIDs then
+        for _, treeID in ipairs(configInfo.treeIDs) do
+            local nodes = C_Traits.GetTreeNodes(treeID)
+            if nodes then
+                for _, nodeID in ipairs(nodes) do
+                    local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
+                    if nodeInfo and nodeInfo.subTreeID then
+                        local subTreeInfo = C_Traits.GetSubTreeInfo(configID, nodeInfo.subTreeID)
+                        if subTreeInfo and subTreeInfo.isActive and subTreeInfo.name and subTreeInfo.name ~= "" then
+                            return subTreeInfo.name
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return "None"
 end
 
 -- -- Snapshot relevant player stats for the "build"
@@ -345,6 +406,8 @@ local function SnapshotPlayerStats()
         end
     end
 
+    stats.heroSpec = GetHeroSpecName()
+
     return stats
 end
 
@@ -365,6 +428,132 @@ statCacheFrame:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
+local auraTrackingSuspended = false
+
+local function ReconcileActiveAuras()
+    if not activeRun then return end
+    activeRun.activeAuras = activeRun.activeAuras or {}
+    activeRun.buffDurations = activeRun.buffDurations or {}
+    
+    local now = GetTime()
+    local currentAuras = {}
+    local index = 1
+    while true do
+        local aura = C_UnitAuras.GetAuraDataByIndex("player", index, "HELPFUL")
+        if not aura then break end
+        
+        local instID = aura.auraInstanceID or aura.auraInstanceId
+        if instID then
+            currentAuras[instID] = aura.spellId
+        end
+        index = index + 1
+    end
+    
+    -- Check for removals
+    for instanceID, cache in pairs(activeRun.activeAuras) do
+        if type(instanceID) == "number" then
+            if not currentAuras[instanceID] then
+                local duration = now - cache.startTime
+                if duration > 0 then
+                    activeRun.buffDurations[cache.spellID] = (activeRun.buffDurations[cache.spellID] or 0) + duration
+                end
+                activeRun.activeAuras[instanceID] = nil
+            end
+        end
+    end
+    
+    -- Check for additions
+    for instanceID, spellID in pairs(currentAuras) do
+        if not activeRun.activeAuras[instanceID] then
+            activeRun.activeAuras[instanceID] = {
+                spellID = spellID,
+                startTime = now
+            }
+        end
+    end
+end
+
+local function CheckWeaponEnchants()
+    if not activeRun then return end
+    activeRun.activeAuras = activeRun.activeAuras or {}
+    activeRun.buffDurations = activeRun.buffDurations or {}
+    
+    local now = GetTime()
+    local hasMH, mhExpire, mhCharges, mhEnchantID, hasOH, ohExpire, ohCharges, ohEnchantID = GetWeaponEnchantInfo()
+    
+    -- Process Main Hand
+    local mhCache = activeRun.activeAuras["mh_imbue"]
+    if hasMH and mhEnchantID then
+        if mhCache then
+            if mhCache.spellID ~= mhEnchantID then
+                local duration = now - mhCache.startTime
+                if duration > 0 then
+                    activeRun.buffDurations[mhCache.spellID] = (activeRun.buffDurations[mhCache.spellID] or 0) + duration
+                end
+                activeRun.activeAuras["mh_imbue"] = {
+                    spellID = mhEnchantID,
+                    startTime = now
+                }
+            end
+        else
+            activeRun.activeAuras["mh_imbue"] = {
+                spellID = mhEnchantID,
+                startTime = now
+            }
+        end
+    else
+        if mhCache then
+            local duration = now - mhCache.startTime
+            if duration > 0 then
+                activeRun.buffDurations[mhCache.spellID] = (activeRun.buffDurations[mhCache.spellID] or 0) + duration
+            end
+            activeRun.activeAuras["mh_imbue"] = nil
+        end
+    end
+    
+    -- Process Off Hand
+    local ohCache = activeRun.activeAuras["oh_imbue"]
+    if hasOH and ohEnchantID then
+        if ohCache then
+            if ohCache.spellID ~= ohEnchantID then
+                local duration = now - ohCache.startTime
+                if duration > 0 then
+                    activeRun.buffDurations[ohCache.spellID] = (activeRun.buffDurations[ohCache.spellID] or 0) + duration
+                end
+                activeRun.activeAuras["oh_imbue"] = {
+                    spellID = ohEnchantID,
+                    startTime = now
+                }
+            end
+        else
+            activeRun.activeAuras["oh_imbue"] = {
+                spellID = ohEnchantID,
+                startTime = now
+            }
+        end
+    else
+        if ohCache then
+            local duration = now - ohCache.startTime
+            if duration > 0 then
+                activeRun.buffDurations[ohCache.spellID] = (activeRun.buffDurations[ohCache.spellID] or 0) + duration
+            end
+            activeRun.activeAuras["oh_imbue"] = nil
+        end
+    end
+end
+
+local function FlushActiveAuras(endTime)
+    if not activeRun or not activeRun.activeAuras then return end
+    local now = endTime or GetTime()
+    for instanceID, cache in pairs(activeRun.activeAuras) do
+        local duration = now - cache.startTime
+        if duration > 0 then
+            activeRun.buffDurations[cache.spellID] = (activeRun.buffDurations[cache.spellID] or 0) + duration
+        end
+    end
+    activeRun.activeAuras = {}
+end
+
 -- Start tracking an active run (called on M+ start or boss pull)
 local function StartActiveRun(buildLabel)
     if not IsTrackableContent() then return end
@@ -372,6 +561,7 @@ local function StartActiveRun(buildLabel)
     local success, instanceName, diffName, keyLevel = IsTrackableContent()
     activeRun = {
         startTime = time(),
+        startGetTime = GetTime(),
         instance = instanceName or "Unknown",
         difficulty = diffName or "Unknown",
         keyLevel = keyLevel or 0,
@@ -382,7 +572,7 @@ local function StartActiveRun(buildLabel)
         dpsCDsUsed = {},
         healingCDsUsed = {},
         buffDurations = {},
-        activeBuffs = {},
+        activeAuras = {},
         damage = 0,
         dt = 0,
         healing = 0,
@@ -390,6 +580,8 @@ local function StartActiveRun(buildLabel)
         dispels = 0,
         deaths = 0,
     }
+    ReconcileActiveAuras()
+    CheckWeaponEnchants()
     Print("Active run tracking started for " .. (activeRun.instance or "") .. " (" .. (activeRun.buildLabel or "") .. ")")
 end
 
@@ -410,6 +602,8 @@ local function StartCustomRun()
             if label == "" then label = "Custom Run" end
             activeRun = {
                 startTime = time(),
+                startGetTime = GetTime(),
+                initialSessionID = GetLatestSessionID(),
                 instance = "Custom",
                 difficulty = "Custom",
                 keyLevel = 0,
@@ -421,7 +615,7 @@ local function StartCustomRun()
                 dpsCDsUsed = {},
                 healingCDsUsed = {},
                 buffDurations = {},
-                activeBuffs = {},
+                activeAuras = {},
                 damage = 0,
                 dt = 0,
                 healing = 0,
@@ -429,6 +623,8 @@ local function StartCustomRun()
                 dispels = 0,
                 deaths = 0,
             }
+            ReconcileActiveAuras()
+            CheckWeaponEnchants()
             Print("Custom tracking started: " .. label .. ". Use Stop button or /bc record when done.")
         end,
         EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
@@ -489,29 +685,74 @@ end
 -- We prefer the most recent session whose durationSeconds looks like a single pull (not the multi-hour Overall).
 -- This lets us lock *all* metrics (DT, Healing, AvoidableDT, etc.) to the exact same combat session,
 -- preventing the per-type fallback (Current for DT but Overall for Abs/Heal) that was causing mixed numbers.
-local function GetBestSessionIDForCurrentPull()
+local function GetBestSessionIDForCurrentPull(initialSessionID)
     if not C_DamageMeter or not C_DamageMeter.GetAvailableCombatSessions then
         return nil
     end
     local sessions = C_DamageMeter.GetAvailableCombatSessions() or {}
     if #sessions == 0 then return nil end
 
+    local latest = sessions[#sessions]
+    if latest and latest.sessionID == initialSessionID then
+        -- No new combat occurred since starting the custom run
+        return nil
+    end
+
     -- Walk from the end (most recent first)
     for i = #sessions, 1, -1 do
         local s = sessions[i]
+        if s.sessionID == initialSessionID then
+            -- Reached the session that was active when we started tracking, anything before/at this is old
+            break
+        end
         local d = s.durationSeconds
         if IsSecret(d) then
-            -- Duration is protected, but this is still the most recent session — good candidate for a fresh pull
             return s.sessionID
         end
         if d and d >= 2 and d <= 300 then
-            -- Plausible length for one dummy/golem pull or short boss
             return s.sessionID
         end
     end
 
-    -- Fallback to the absolute latest session in the list
-    return sessions[#sessions].sessionID
+    local latestID = sessions[#sessions].sessionID
+    if latestID ~= initialSessionID then
+        return latestID
+    end
+    return nil
+end
+
+local function GetActorTotalFromSpells(sessionID, dmType)
+    if not C_DamageMeter or not C_DamageMeter.GetCombatSessionSourceFromID then
+        return nil
+    end
+    local pGUID = UnitGUID("player")
+    if not pGUID then return nil end
+    local ok, source = pcall(C_DamageMeter.GetCombatSessionSourceFromID, sessionID, dmType, pGUID)
+    if ok and source and source.combatSpells then
+        local sum = 0
+        for _, spell in ipairs(source.combatSpells) do
+            sum = sum + (spell.totalAmount or 0)
+        end
+        return sum
+    end
+    return nil
+end
+
+local function GetActorTotalFromSpellsByType(sessionType, dmType)
+    if not C_DamageMeter or not C_DamageMeter.GetCombatSessionSourceFromType then
+        return nil
+    end
+    local pGUID = UnitGUID("player")
+    if not pGUID then return nil end
+    local ok, source = pcall(C_DamageMeter.GetCombatSessionSourceFromType, sessionType, dmType, pGUID)
+    if ok and source and source.combatSpells then
+        local sum = 0
+        for _, spell in ipairs(source.combatSpells) do
+            sum = sum + (spell.totalAmount or 0)
+        end
+        return sum
+    end
+    return nil
 end
 
 -- Native C_DamageMeter data fetch (primary/only source for 12.0+ per AGENTS.md).
@@ -519,7 +760,7 @@ end
 -- Returns summary (with hasActivity) or nil.
 -- preferCurrent: when true (non-M+ / solo dummy / short boss), we try to lock to a specific recent short sessionID
 -- (instead of just preferring Current type). This ensures DT, Heal, AvoidableDT etc. all come from the *same* pull.
-local function GetNativeMeterData(preferCurrent)
+local function GetNativeMeterData(preferCurrent, initialSessionID)
     if not C_DamageMeter or not C_DamageMeter.IsDamageMeterAvailable then
         return nil
     end
@@ -533,41 +774,55 @@ local function GetNativeMeterData(preferCurrent)
 
     -- For short content, try to get one consistent sessionID from the available list.
     -- Then we'll query every metric type from that exact ID.
-    local lockedSessionID = preferCurrent and GetBestSessionIDForCurrentPull() or nil
+    local lockedSessionID = preferCurrent and GetBestSessionIDForCurrentPull(initialSessionID) or nil
 
     local function fetchForType(dmType)
-        -- If we have a locked sessionID from GetAvailable (best for dummies), use GetCombatSessionFromID on it.
-        -- This guarantees all metrics (damage taken, healing, avoidable damage...) come from the identical combat session.
-        if lockedSessionID and C_DamageMeter.GetCombatSessionFromID then
-            local sess = C_DamageMeter.GetCombatSessionFromID(lockedSessionID, dmType)
-            if sess and sess.combatSources and #sess.combatSources > 0 then
-                for _, src in ipairs(sess.combatSources) do
-                    if src.isLocalPlayer then
-                        return {
-                            total = src.totalAmount or 0,
-                            perSec = src.amountPerSecond or 0,
-                            duration = sess.durationSeconds or 0,
-                        }
+        if preferCurrent then
+            if lockedSessionID then
+                if C_DamageMeter.GetCombatSessionFromID then
+                    local sess = C_DamageMeter.GetCombatSessionFromID(lockedSessionID, dmType)
+                    if sess and sess.combatSources and #sess.combatSources > 0 then
+                        for _, src in ipairs(sess.combatSources) do
+                            if src.isLocalPlayer then
+                                local totalVal = BuildCompare_UnboxSecret(src.totalAmount)
+                                if dmType == Enum.DamageMeterType.Interrupts or dmType == Enum.DamageMeterType.Dispels or dmType == Enum.DamageMeterType.Deaths then
+                                    local spellSum = GetActorTotalFromSpells(lockedSessionID, dmType)
+                                    if spellSum ~= nil then
+                                        totalVal = BuildCompare_UnboxSecret(spellSum)
+                                    end
+                                end
+                                return {
+                                    total = totalVal,
+                                    perSec = BuildCompare_UnboxSecret(src.amountPerSecond),
+                                    duration = BuildCompare_UnboxSecret(sess.durationSeconds or 0),
+                                }
+                            end
+                        end
                     end
                 end
             end
-            -- If the locked ID didn't have a player source for this type, fall through to the type-based order.
+            return nil
         end
 
         -- Fallback / M+ path: use FromType with smart order
-        local sessionOrder = preferCurrent
-            and {Enum.DamageMeterSessionType.Current, Enum.DamageMeterSessionType.Overall}
-            or  {Enum.DamageMeterSessionType.Overall, Enum.DamageMeterSessionType.Current}
+        local sessionOrder = {Enum.DamageMeterSessionType.Overall, Enum.DamageMeterSessionType.Current}
 
         for _, st in ipairs(sessionOrder) do
             local sess = C_DamageMeter.GetCombatSessionFromType(st, dmType)
             if sess and sess.combatSources and #sess.combatSources > 0 then
                 for _, src in ipairs(sess.combatSources) do
                     if src.isLocalPlayer then
+                        local totalVal = BuildCompare_UnboxSecret(src.totalAmount)
+                        if dmType == Enum.DamageMeterType.Interrupts or dmType == Enum.DamageMeterType.Dispels or dmType == Enum.DamageMeterType.Deaths then
+                            local spellSum = GetActorTotalFromSpellsByType(st, dmType)
+                            if spellSum ~= nil then
+                                totalVal = BuildCompare_UnboxSecret(spellSum)
+                            end
+                        end
                         return {
-                            total = src.totalAmount or 0,
-                            perSec = src.amountPerSecond or 0,
-                            duration = sess.durationSeconds or 0,
+                            total = totalVal,
+                            perSec = BuildCompare_UnboxSecret(src.amountPerSecond),
+                            duration = BuildCompare_UnboxSecret(sess.durationSeconds or 0),
                         }
                     end
                 end
@@ -626,13 +881,13 @@ end
 _G.GetNativeMeterData = GetNativeMeterData
 
 -- Retrieve combat metrics summary. Pure native C_DamageMeter only (streamlined, no external addons).
-local function GetPlayerMeterSummary(isOverall, runStartTime)
+local function GetPlayerMeterSummary(isOverall, runStartTime, initialSessionID)
     -- For M+ (keyLevel > 0) we want the Overall full-run numbers (the type-based Overall is usually correct).
     -- For dummy/solo/short content we compute a lockedSessionID (most recent short session from GetAvailableCombatSessions)
     -- and query *every* metric type from that exact same sessionID. This prevents the previous problem where
     -- DT might come from Current but Healing/AvoidableDT fell back to a huge cumulative Overall (now prevented by locked sessionID for short runs).
     local preferCurrent = not isOverall
-    local native = GetNativeMeterData(preferCurrent)
+    local native = GetNativeMeterData(preferCurrent, initialSessionID)
     if native then
         return native
     end
@@ -666,6 +921,8 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
     -- Capture key fields locally before clearing to prevent race conditions during delay
     local capturedSource = {
         startTime = recordSource.startTime,
+        startGetTime = recordSource.startGetTime,
+        initialSessionID = recordSource.initialSessionID,
         duration = recordSource.duration,
         instance = recordSource.instance,
         difficulty = recordSource.difficulty,
@@ -688,7 +945,7 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         dispels = recordSource.dispels,
         deaths = recordSource.deaths,
         buffDurations = recordSource.buffDurations,
-        activeBuffs = recordSource.activeBuffs,
+        activeAuras = recordSource.activeAuras,
     }
 
     -- Clear active run and combat segment immediately to allow new runs to start
@@ -697,7 +954,9 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
 
     local function FinalizeRecord()
         local duration = capturedSource.duration or 0
-        if duration == 0 and capturedSource.startTime then
+        if (IsSecret(duration) or duration == 0) and capturedSource.startGetTime then
+            duration = GetTime() - capturedSource.startGetTime
+        elseif (IsSecret(duration) or duration == 0) and capturedSource.startTime then
             duration = time() - capturedSource.startTime
         end
 
@@ -719,7 +978,7 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
 
         -- Fetch the combat summary directly from the built-in C_DamageMeter (pure WoW, no external addons)
         local isOverall = (capturedSource.keyLevel and capturedSource.keyLevel > 0)
-        local meterSummary = GetPlayerMeterSummary(isOverall, capturedSource.startTime)
+        local meterSummary = GetPlayerMeterSummary(isOverall, capturedSource.startTime, capturedSource.initialSessionID)
         if meterSummary then
             dt = meterSummary.dt or dt
             dtps = meterSummary.dtps or dtps
@@ -736,6 +995,11 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
             hasActivity = meterSummary.hasActivity
         end
 
+        if capturedSource.runType == "custom" and dt == 0 and damage == 0 and healing == 0 then
+            Print("No combat activity recorded. Custom run not saved.")
+            return
+        end
+
         -- (Removed solo auto-run logic per narrowed scope; no more per-pack dummy/delve/outdoor records)
 
         local buildLabel = optionalLabel or capturedSource.buildLabel or ("Build " .. date("%H%M"))
@@ -745,18 +1009,26 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         -- Calculate buff/cooldown uptimes
         local buffUptimes = {}
         local runDuration = duration
-        if runDuration > 0 then
-            local bDurations = capturedSource.buffDurations or {}
-            local actBuffs = capturedSource.activeBuffs or {}
-            for spellID, start in pairs(actBuffs) do
-                local dur = time() - start
-                bDurations[spellID] = (bDurations[spellID] or 0) + dur
+        if (IsSecret(runDuration) or runDuration == 0) and capturedSource.startGetTime then
+            runDuration = GetTime() - capturedSource.startGetTime
+        elseif (IsSecret(runDuration) or runDuration == 0) and capturedSource.startTime then
+            runDuration = time() - capturedSource.startTime
+        end
+        if runDuration <= 0 then runDuration = 1 end
+
+        local bDurations = capturedSource.buffDurations or {}
+        local actAuras = capturedSource.activeAuras or {}
+        local now = GetTime()
+        for instanceID, cache in pairs(actAuras) do
+            local dur = now - cache.startTime
+            if dur > 0 then
+                bDurations[cache.spellID] = (bDurations[cache.spellID] or 0) + dur
             end
-            for spellID, dur in pairs(bDurations) do
-                local pct = (dur / runDuration) * 100
-                if pct > 100 then pct = 100 end
-                buffUptimes[spellID] = pct
-            end
+        end
+        for spellID, dur in pairs(bDurations) do
+            local pct = (dur / runDuration) * 100
+            if pct > 100 then pct = 100 end
+            buffUptimes[spellID] = pct
         end
 
         local record = {
@@ -915,6 +1187,7 @@ local function OnCombatEvent(self, event, ...)
             -- No more automatic per-pack recording for non-M+/boss content.
             BuildCompare_LastCombatSegment = {
                 startTime = activeRun.startTime,
+                startGetTime = activeRun.startGetTime,
                 duration = duration,
                 instance = activeRun.instance,
                 difficulty = activeRun.difficulty,
@@ -937,7 +1210,7 @@ local function OnCombatEvent(self, event, ...)
                 dispels = activeRun.dispels,
                 deaths = activeRun.deaths,
                 buffDurations = activeRun.buffDurations,
-                activeBuffs = activeRun.activeBuffs,
+                activeAuras = activeRun.activeAuras,
             }
         end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -950,25 +1223,61 @@ local function OnCombatEvent(self, event, ...)
             activeRun.deaths = (activeRun.deaths or 0) + 1
         end
     elseif event == "UNIT_AURA" then
-        local unit = ...
-        if unit == "player" and activeRun then
-            activeRun.activeBuffs = activeRun.activeBuffs or {}
-            activeRun.buffDurations = activeRun.buffDurations or {}
-            for spellID, _ in pairs(TRACKED_BUFF_CDS) do
-                local aura = C_UnitAuras.GetPlayerAuraBySpellID(spellID)
-                local isActiveNow = (aura ~= nil)
-                local wasActive = (activeRun.activeBuffs[spellID] ~= nil)
-                if isActiveNow and not wasActive then
-                    activeRun.activeBuffs[spellID] = time()
-                elseif not isActiveNow and wasActive then
-                    local start = activeRun.activeBuffs[spellID]
-                    if start then
-                        local dur = time() - start
-                        activeRun.buffDurations[spellID] = (activeRun.buffDurations[spellID] or 0) + dur
+        local unit, updateInfo = ...
+        if unit ~= "player" then return end
+        if not activeRun then return end
+        if auraTrackingSuspended then return end
+        
+        activeRun.activeAuras = activeRun.activeAuras or {}
+        activeRun.buffDurations = activeRun.buffDurations or {}
+        
+        if updateInfo and not updateInfo.isFullUpdate then
+            -- Removals
+            if updateInfo.removedAuraInstanceIDs then
+                local now = GetTime()
+                for _, instanceID in ipairs(updateInfo.removedAuraInstanceIDs) do
+                    local cache = activeRun.activeAuras[instanceID]
+                    if cache then
+                        local duration = now - cache.startTime
+                        if duration > 0 then
+                            activeRun.buffDurations[cache.spellID] = (activeRun.buffDurations[cache.spellID] or 0) + duration
+                        end
+                        activeRun.activeAuras[instanceID] = nil
                     end
-                    activeRun.activeBuffs[spellID] = nil
                 end
             end
+            -- Additions
+            if updateInfo.addedAuras then
+                local now = GetTime()
+                for _, aura in ipairs(updateInfo.addedAuras) do
+                    if aura.isHelpful then
+                        local instID = aura.auraInstanceID or aura.auraInstanceId
+                        if instID then
+                            activeRun.activeAuras[instID] = {
+                                spellID = aura.spellId,
+                                startTime = now
+                            }
+                        end
+                    end
+                end
+            end
+        else
+            ReconcileActiveAuras()
+        end
+    elseif event == "PLAYER_LEAVING_WORLD" then
+        auraTrackingSuspended = true
+        FlushActiveAuras()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        auraTrackingSuspended = false
+        if activeRun then
+            activeRun.activeAuras = {}
+            ReconcileActiveAuras()
+            CheckWeaponEnchants()
+        end
+    elseif event == "UNIT_INVENTORY_CHANGED" then
+        local unit = ...
+        if unit == "player" then
+            CheckWeaponEnchants()
         end
     end
 end
@@ -986,6 +1295,9 @@ f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("PLAYER_DEAD")
 f:RegisterEvent("UNIT_AURA")
+f:RegisterEvent("PLAYER_LEAVING_WORLD")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("UNIT_INVENTORY_CHANGED")
 f:SetScript("OnEvent", function(self, event, arg1, ...)
     if event == "ADDON_LOADED" and arg1 == AddonName then
         BuildCompareDB = BuildCompareDB or { runs = {}, settings = {} }

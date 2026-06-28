@@ -153,7 +153,10 @@ local function CreateBarRow(parent, index, run)
     -- Text overlay on bar
     row.text = row.dtBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.text:SetPoint("LEFT", row.dtBar, "LEFT", 4, 0)
-    row.text:SetText("DT: " .. BuildCompare_FormatNumber(0) .. " | Heal: " .. BuildCompare_FormatNumber(0))
+    local class = run and run.stats and run.stats.class or "Unknown"
+    local spec = run and run.stats and run.stats.spec or "None"
+    local heroSpec = run and run.stats and run.stats.heroSpec or "None"
+    row.text:SetFormattedText("%s / %s / %s", class, spec, heroSpec)
 
     -- Store run ref
     row.run = run
@@ -300,9 +303,11 @@ function BuildCompare_CreateMainFrame()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:SetClampedToScreen(true)
+    frame:SetFrameStrata("HIGH")
+    frame:SetToplevel(true)
 
-    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-    frame.title:SetPoint("LEFT", frame.TitleBg, "LEFT", 8, 0)
+    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightMedium")
+    frame.title:SetPoint("LEFT", frame.TitleBg, "LEFT", 8, -2)
     frame.title:SetText("BuildCompare - Run & Build Comparison Tool")
 
     -- Minimize button. We create it early but position + size it in the delayed block
@@ -497,14 +502,14 @@ function BuildCompare_CreateMainFrame()
     btnStartCustom:SetScript("OnClick", StartCustomRun)
 
     local btnStopCustom = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    btnStopCustom:SetSize(130, 20)
+    btnStopCustom:SetSize(90, 20)
     btnStopCustom:SetPoint("LEFT", btnStartCustom, "RIGHT", 5, 0)
-    btnStopCustom:SetText("Stop & Save Custom")
+    btnStopCustom:SetText("Stop&Save")
     btnStopCustom:SetScript("OnClick", StopCustomTracking)
 
     -- Close button removed per request. Clear DB now placed exactly where Close was (right after Stop & Save Custom).
     local btnClear = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    btnClear:SetSize(65, 22)
+    btnClear:SetSize(65, 20)
     btnClear:SetPoint("LEFT", btnStopCustom, "RIGHT", 6, 0)
     btnClear:SetText("Clear DB")
     btnClear:SetScript("OnClick", function()
@@ -644,7 +649,7 @@ local function CreateAlignedCompareRow(parent, y, isHeader, metric, aVal, bVal, 
         v3:SetPoint("LEFT", row.b, "RIGHT", 1, 0)
 
         -- Col C: % Diff
-        row.d = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        row.d = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         row.d:SetPoint("LEFT", v3, "RIGHT", 2, 0)
         row.d:SetWidth(DIFF_W)
         row.d:SetFormattedText("%s", tostring(diffVal or ""))
@@ -716,27 +721,22 @@ function BuildCompare_RefreshUI()
         local run = runs[i]
         local row = CreateBarRow(content, #frame.rows + 1, run)
 
-        -- Enhanced status bar text layout using SetFormattedText for taint safety (issue #2 fix)
-        -- Use SafeDisplayVal(...) + SetFormattedText so that for secret protected numbers (from C_DamageMeter in runs or live) the engine does the k/m abbr, and for normal values we get the .1f k/m from inside SafeDisplayVal/FormatNumber. DT, AvDT, Dmg, Heal now always clean abbreviated in the main saved-runs list rows.
-        -- Include Dmg for custom/dummy tests where DT may be 0 but outgoing damage is the key metric
-        row.text:SetFormattedText("DT: %s | AvDT: %s | Dmg: %s | Heal: %s", SafeDisplayVal(run.dt), SafeDisplayVal(run.avoidableDT or 0), SafeDisplayVal(run.damage or 0), SafeDisplayVal(run.healing or 0))
+        local class = run.stats and run.stats.class or "Unknown"
+        local spec = run.stats and run.stats.spec or "None"
+        local heroSpec = run.stats and run.stats.heroSpec or "None"
+        row.text:SetFormattedText("%s / %s / %s", class, spec, heroSpec)
 
         -- Bar scale relative to filtered list max DT
         local maxDT = 1
         for _, r in ipairs(runs) do
-            local val = r.dt or 0
-            if not IsSecret(val) and val > maxDT then
+            local val = BuildCompare_UnboxSecret(r.dt)
+            if val > maxDT then
                 maxDT = val
             end
         end
-        local val = run.dt or 0
-        if IsSecret(val) then
-            row.dtBar:SetMinMaxValues(0, 1)
-            row.dtBar:SetValue(0)
-        else
-            row.dtBar:SetMinMaxValues(0, maxDT)
-            row.dtBar:SetValue(val)
-        end
+        local val = BuildCompare_UnboxSecret(run.dt)
+        row.dtBar:SetMinMaxValues(0, maxDT)
+        row.dtBar:SetValue(val)
 
         -- Pre-select state
         if selectedForCompare[1] and selectedForCompare[1].id == run.id then
@@ -804,277 +804,373 @@ function BuildCompare_RefreshUI()
 
         -- === Performance metrics (aligned rows) ===
 
-        -- Section 1: Tank
-        addSection("|cFFFFD100Tank:|r", 6)
+        local function renderTankSection()
+            -- Section 1: Tank
+            addSection("|cFFFFD100Tank:|r", 6)
 
-        -- DT (total and DTPS, e.g. 470k (13k/s))
-        local na, nb = a.dt or 0, b.dt or 0
-        local ta, tb
-        if IsSecret(na) then
-            ta = BuildCompare_FormatNumber(na)
-        else
-            ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.dtps or 0) .. "/s)"
-        end
-        if IsSecret(nb) then
-            tb = BuildCompare_FormatNumber(nb)
-        else
-            tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.dtps or 0) .. "/s)"
-        end
-        local ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        local gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("DT", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 6)
-
-        -- Def CDs
-        local cda = #(a.defensiveCDsUsed or {})
-        local cdb = #(b.defensiveCDsUsed or {})
-        ta, tb = tostring(cda), tostring(cdb)
-        ga = cda > cdb; gb = cdb > cda
-        addRow("Def CDs", cda, cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(cda, cdb), ga, gb, 18)
-
-        -- Section 2: DMG
-        addSection("|cFFFFD100DMG:|r", 6)
-
-        -- Dmg
-        na, nb = a.damage or 0, b.damage or 0
-        ta = BuildCompare_FormatNumber(na)
-        tb = BuildCompare_FormatNumber(nb)
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Dmg", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
-
-        -- DPS
-        na, nb = a.dps or 0, b.dps or 0
-        if IsSecret(na) then
-            ta = BuildCompare_FormatNumber(na)
-        else
-            ta = BuildCompare_FormatNumber(na) .. "/s"
-        end
-        if IsSecret(nb) then
-            tb = BuildCompare_FormatNumber(nb)
-        else
-            tb = BuildCompare_FormatNumber(nb) .. "/s"
-        end
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("DPS", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
-
-        -- Dmg CDs
-        local dmg_cda = #(a.dpsCDsUsed or {})
-        local dmg_cdb = #(b.dpsCDsUsed or {})
-        ta, tb = tostring(dmg_cda), tostring(dmg_cdb)
-        ga = dmg_cda > dmg_cdb; gb = dmg_cdb > dmg_cda
-        addRow("Dmg CDs", dmg_cda, dmg_cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(dmg_cda, dmg_cdb), ga, gb, 18)
-
-        -- Section 3: Heals
-        addSection("|cFFFFD100Heals:|r", 6)
-
-        -- Healing
-        na, nb = a.healing or 0, b.healing or 0
-        ta = BuildCompare_FormatNumber(na)
-        tb = BuildCompare_FormatNumber(nb)
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Healing", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
-
-        -- HPS
-        na, nb = a.hps or 0, b.hps or 0
-        if IsSecret(na) then
-            ta = BuildCompare_FormatNumber(na)
-        else
-            ta = BuildCompare_FormatNumber(na) .. "/s"
-        end
-        if IsSecret(nb) then
-            tb = BuildCompare_FormatNumber(nb)
-        else
-            tb = BuildCompare_FormatNumber(nb) .. "/s"
-        end
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("HPS", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
-
-        -- Heal CDs
-        local heal_cda = #(a.healingCDsUsed or {})
-        local heal_cdb = #(b.healingCDsUsed or {})
-        ta, tb = tostring(heal_cda), tostring(heal_cdb)
-        ga = heal_cda > heal_cdb; gb = heal_cdb > heal_cda
-        addRow("Heal CDs", heal_cda, heal_cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(heal_cda, heal_cdb), ga, gb, 18)
-
-        -- Section 4: Misc
-        addSection("|cFFFFD100Misc:|r", 6)
-
-        -- Interrupts
-        na, nb = a.interrupts or 0, b.interrupts or 0
-        ta = BuildCompare_FormatNumber(na)
-        tb = BuildCompare_FormatNumber(nb)
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Interrupts", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
-
-        -- Deaths
-        na, nb = a.deaths or 0, b.deaths or 0
-        ta = BuildCompare_FormatNumber(na)
-        tb = BuildCompare_FormatNumber(nb)
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Deaths", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 50)
-
-        -- Section 5: Stats
-        addSection("|cFFFFD100Stats:|r", 6)
-
-        local saStats = a.stats or {}
-        local sbStats = b.stats or {}
-
-        -- Strength
-        na, nb = saStats.strength or 0, sbStats.strength or 0
-        ta = BuildCompare_FormatNumber(na)
-        tb = BuildCompare_FormatNumber(nb)
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Strength", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
-
-        -- Agility
-        na, nb = saStats.agility or 0, sbStats.agility or 0
-        ta = BuildCompare_FormatNumber(na)
-        tb = BuildCompare_FormatNumber(nb)
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Agility", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
-
-        -- Intellect
-        na, nb = saStats.intellect or 0, sbStats.intellect or 0
-        ta = BuildCompare_FormatNumber(na)
-        tb = BuildCompare_FormatNumber(nb)
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Intellect", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
-
-        -- Mastery
-        local masteryPctA = saStats.masteryPct or 0
-        local masteryPctB = sbStats.masteryPct or 0
-        na, nb = saStats.mastery or 0, sbStats.mastery or 0
-        ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), masteryPctA)
-        tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), masteryPctB)
-        ga = not IsSecret(masteryPctA) and not IsSecret(masteryPctB) and masteryPctA > masteryPctB
-        gb = not IsSecret(masteryPctA) and not IsSecret(masteryPctB) and masteryPctB > masteryPctA
-        addRow("Mastery", masteryPctA, masteryPctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(masteryPctA, masteryPctB), ga, gb, 6)
-
-        -- Crit
-        local critPctA = saStats.critPct or 0
-        local critPctB = sbStats.critPct or 0
-        na, nb = saStats.crit or 0, sbStats.crit or 0
-        ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), critPctA)
-        tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), critPctB)
-        ga = not IsSecret(critPctA) and not IsSecret(critPctB) and critPctA > critPctB
-        gb = not IsSecret(critPctA) and not IsSecret(critPctB) and critPctB > critPctA
-        addRow("Crit", critPctA, critPctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(critPctA, critPctB), ga, gb, 6)
-
-        -- Haste
-        local hastePctA = saStats.hastePct or 0
-        local hastePctB = sbStats.hastePct or 0
-        na, nb = saStats.haste or 0, sbStats.haste or 0
-        ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), hastePctA)
-        tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), hastePctB)
-        ga = not IsSecret(hastePctA) and not IsSecret(hastePctB) and hastePctA > hastePctB
-        gb = not IsSecret(hastePctA) and not IsSecret(hastePctB) and hastePctB > hastePctA
-        addRow("Haste", hastePctA, hastePctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(hastePctA, hastePctB), ga, gb, 6)
-
-        -- Vers
-        local versPctA = saStats.versPct or 0
-        local versPctB = sbStats.versPct or 0
-        na, nb = saStats.vers or 0, sbStats.vers or 0
-        ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), versPctA)
-        tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), versPctB)
-        ga = not IsSecret(versPctA) and not IsSecret(versPctB) and versPctA > versPctB
-        gb = not IsSecret(versPctA) and not IsSecret(versPctB) and versPctB > versPctA
-        addRow("Vers", versPctA, versPctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(versPctA, versPctB), ga, gb, 6)
-
-        -- Dodge
-        na, nb = saStats.dodgePct or 0, sbStats.dodgePct or 0
-        if IsSecret(na) or IsSecret(nb) then
-            ta = "Pending"
-            tb = "Pending"
-        else
-            ta = string.format("%.1f%%", na)
-            tb = string.format("%.1f%%", nb)
-        end
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Dodge", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
-
-        -- Parry
-        na, nb = saStats.parryPct or 0, sbStats.parryPct or 0
-        if IsSecret(na) or IsSecret(nb) then
-            ta = "Pending"
-            tb = "Pending"
-        else
-            ta = string.format("%.1f%%", na)
-            tb = string.format("%.1f%%", nb)
-        end
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Parry", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
-
-        -- Block
-        na, nb = saStats.blockPct or 0, sbStats.blockPct or 0
-        if IsSecret(na) or IsSecret(nb) then
-            ta = "Pending"
-            tb = "Pending"
-        else
-            ta = string.format("%.1f%%", na)
-            tb = string.format("%.1f%%", nb)
-        end
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Block", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 18)
-
-        -- Section 6: Buffs
-        addSection("|cFFFFD100Buffs:|r", 6)
-
-        local aUptimes = a.buffUptimes or {}
-        local bUptimes = b.buffUptimes or {}
-        local uniqueSpells = {}
-        for spellID in pairs(aUptimes) do
-            uniqueSpells[spellID] = true
-        end
-        for spellID in pairs(bUptimes) do
-            uniqueSpells[spellID] = true
-        end
-
-        local function GetSpellName(spellID)
-            if not spellID then return "Unknown" end
-            local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
-            return spellInfo and spellInfo.name or ("Spell " .. spellID)
-        end
-
-        local sortedSpells = {}
-        for spellID in pairs(uniqueSpells) do
-            table.insert(sortedSpells, spellID)
-        end
-        table.sort(sortedSpells, function(s1, s2)
-            local name1 = GetSpellName(s1) or ""
-            local name2 = GetSpellName(s2) or ""
-            return name1 < name2
-        end)
-
-        for _, spellID in ipairs(sortedSpells) do
-            local uptimeA = aUptimes[spellID] or 0
-            local uptimeB = bUptimes[spellID] or 0
-            local spellName = GetSpellName(spellID)
-            local txtA = string.format("%.1f%%", uptimeA)
-            local txtB = string.format("%.1f%%", uptimeB)
-            local diffVal = uptimeB - uptimeA
-            local diffTxt
-            if diffVal > 0.05 then
-                diffTxt = string.format("|cFF00FF00+%.1f%%|r", diffVal)
-            elseif diffVal < -0.05 then
-                diffTxt = string.format("|cFFFF3333-%.1f%%|r", math.abs(diffVal))
+            -- DT (total and DTPS, e.g. 470k (13k/s))
+            local na, nb = a.dt or 0, b.dt or 0
+            local ta, tb
+            if IsSecret(na) then
+                ta = BuildCompare_FormatNumber(na)
             else
-                diffTxt = "|cFFFFFFFF0.0%|r"
+                ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.dtps or 0) .. "/s)"
             end
-            local ga = uptimeA > uptimeB
-            local gb = uptimeB > uptimeA
-            addRow(spellName, uptimeA, uptimeB, txtA, txtB, diffTxt, ga, gb, 6)
+            if IsSecret(nb) then
+                tb = BuildCompare_FormatNumber(nb)
+            else
+                tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.dtps or 0) .. "/s)"
+            end
+            local valA = BuildCompare_UnboxSecret(na)
+            local valB = BuildCompare_UnboxSecret(nb)
+            local ga = valB > valA
+            local gb = valA > valB
+            addRow("DT", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 6)
+
+            -- Def CDs
+            local cda = #(a.defensiveCDsUsed or {})
+            local cdb = #(b.defensiveCDsUsed or {})
+            ta, tb = tostring(cda), tostring(cdb)
+            ga = cda > cdb; gb = cdb > cda
+            addRow("Def CDs", cda, cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(cda, cdb), ga, gb, 18)
         end
+
+        local function renderDmgSection()
+            -- Section 2: DMG
+            addSection("|cFFFFD100DMG:|r", 6)
+
+            -- Dmg
+            local na, nb = a.damage or 0, b.damage or 0
+            local ta = BuildCompare_FormatNumber(na)
+            local tb = BuildCompare_FormatNumber(nb)
+            local valA = BuildCompare_UnboxSecret(na)
+            local valB = BuildCompare_UnboxSecret(nb)
+            local ga = valA > valB
+            local gb = valB > valA
+            addRow("Dmg", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
+
+            -- DPS
+            na, nb = a.dps or 0, b.dps or 0
+            if IsSecret(na) then
+                ta = BuildCompare_FormatNumber(na)
+            else
+                ta = BuildCompare_FormatNumber(na) .. "/s"
+            end
+            if IsSecret(nb) then
+                tb = BuildCompare_FormatNumber(nb)
+            else
+                tb = BuildCompare_FormatNumber(nb) .. "/s"
+            end
+            valA = BuildCompare_UnboxSecret(na)
+            valB = BuildCompare_UnboxSecret(nb)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("DPS", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
+
+            -- Dmg CDs
+            local dmg_cda = #(a.dpsCDsUsed or {})
+            local dmg_cdb = #(b.dpsCDsUsed or {})
+            ta, tb = tostring(dmg_cda), tostring(dmg_cdb)
+            ga = dmg_cda > dmg_cdb; gb = dmg_cdb > dmg_cda
+            addRow("Dmg CDs", dmg_cda, dmg_cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(dmg_cda, dmg_cdb), ga, gb, 18)
+        end
+
+        local function renderHealSection()
+            -- Section 3: Heals
+            addSection("|cFFFFD100Heals:|r", 6)
+
+            -- Healing
+            local na, nb = a.healing or 0, b.healing or 0
+            local ta = BuildCompare_FormatNumber(na)
+            local tb = BuildCompare_FormatNumber(nb)
+            local valA = BuildCompare_UnboxSecret(na)
+            local valB = BuildCompare_UnboxSecret(nb)
+            local ga = valA > valB
+            local gb = valB > valA
+            addRow("Healing", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
+
+            -- HPS
+            na, nb = a.hps or 0, b.hps or 0
+            if IsSecret(na) then
+                ta = BuildCompare_FormatNumber(na)
+            else
+                ta = BuildCompare_FormatNumber(na) .. "/s"
+            end
+            if IsSecret(nb) then
+                tb = BuildCompare_FormatNumber(nb)
+            else
+                tb = BuildCompare_FormatNumber(nb) .. "/s"
+            end
+            valA = BuildCompare_UnboxSecret(na)
+            valB = BuildCompare_UnboxSecret(nb)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("HPS", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
+
+            -- Heal CDs
+            local heal_cda = #(a.healingCDsUsed or {})
+            local heal_cdb = #(b.healingCDsUsed or {})
+            ta, tb = tostring(heal_cda), tostring(heal_cdb)
+            ga = heal_cda > heal_cdb; gb = heal_cdb > heal_cda
+            addRow("Heal CDs", heal_cda, heal_cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(heal_cda, heal_cdb), ga, gb, 18)
+        end
+
+        local function renderMiscSection()
+            -- Section 4: Misc
+            addSection("|cFFFFD100Misc:|r", 6)
+
+            -- Interrupts
+            local na, nb = a.interrupts or 0, b.interrupts or 0
+            local ta = BuildCompare_FormatNumber(na)
+            local tb = BuildCompare_FormatNumber(nb)
+            local valA = BuildCompare_UnboxSecret(na)
+            local valB = BuildCompare_UnboxSecret(nb)
+            local ga = valA > valB
+            local gb = valB > valA
+            addRow("Interrupts", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
+
+            -- Dispels
+            na, nb = a.dispels or 0, b.dispels or 0
+            ta = BuildCompare_FormatNumber(na)
+            tb = BuildCompare_FormatNumber(nb)
+            valA = BuildCompare_UnboxSecret(na)
+            valB = BuildCompare_UnboxSecret(nb)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("Dispels", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
+
+            -- Deaths
+            na, nb = a.deaths or 0, b.deaths or 0
+            ta = BuildCompare_FormatNumber(na)
+            tb = BuildCompare_FormatNumber(nb)
+            valA = BuildCompare_UnboxSecret(na)
+            valB = BuildCompare_UnboxSecret(nb)
+            ga = valB > valA
+            gb = valA > valB
+            addRow("Deaths", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 50)
+        end
+
+        local function renderStatsSection()
+            -- Section 5: Stats
+            addSection("|cFFFFD100Stats:|r", 6)
+
+            local saStats = a.stats or {}
+            local sbStats = b.stats or {}
+
+            -- Strength
+            local na, nb = saStats.strength or 0, sbStats.strength or 0
+            local ta = BuildCompare_FormatNumber(na)
+            local tb = BuildCompare_FormatNumber(nb)
+            local valA = BuildCompare_UnboxSecret(na)
+            local valB = BuildCompare_UnboxSecret(nb)
+            local ga = valA > valB
+            local gb = valB > valA
+            addRow("Strength", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+
+            -- Agility
+            na, nb = saStats.agility or 0, sbStats.agility or 0
+            ta = BuildCompare_FormatNumber(na)
+            tb = BuildCompare_FormatNumber(nb)
+            valA = BuildCompare_UnboxSecret(na)
+            valB = BuildCompare_UnboxSecret(nb)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("Agility", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+
+            -- Intellect
+            na, nb = saStats.intellect or 0, sbStats.intellect or 0
+            ta = BuildCompare_FormatNumber(na)
+            tb = BuildCompare_FormatNumber(nb)
+            valA = BuildCompare_UnboxSecret(na)
+            valB = BuildCompare_UnboxSecret(nb)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("Intellect", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+
+            -- Mastery
+            local masteryPctA = saStats.masteryPct or 0
+            local masteryPctB = sbStats.masteryPct or 0
+            na, nb = saStats.mastery or 0, sbStats.mastery or 0
+            ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), masteryPctA)
+            tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), masteryPctB)
+            valA = BuildCompare_UnboxSecret(masteryPctA)
+            valB = BuildCompare_UnboxSecret(masteryPctB)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("Mastery", masteryPctA, masteryPctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(masteryPctA, masteryPctB), ga, gb, 6)
+
+            -- Crit
+            local critPctA = saStats.critPct or 0
+            local critPctB = sbStats.critPct or 0
+            na, nb = saStats.crit or 0, sbStats.crit or 0
+            ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), critPctA)
+            tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), critPctB)
+            valA = BuildCompare_UnboxSecret(critPctA)
+            valB = BuildCompare_UnboxSecret(critPctB)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("Crit", critPctA, critPctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(critPctA, critPctB), ga, gb, 6)
+
+            -- Haste
+            local hastePctA = saStats.hastePct or 0
+            local hastePctB = sbStats.hastePct or 0
+            na, nb = saStats.haste or 0, sbStats.haste or 0
+            ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), hastePctA)
+            tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), hastePctB)
+            valA = BuildCompare_UnboxSecret(hastePctA)
+            valB = BuildCompare_UnboxSecret(hastePctB)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("Haste", hastePctA, hastePctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(hastePctA, hastePctB), ga, gb, 6)
+
+            -- Vers
+            local versPctA = saStats.versPct or 0
+            local versPctB = sbStats.versPct or 0
+            na, nb = saStats.vers or 0, sbStats.vers or 0
+            ta = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(na), versPctA)
+            tb = string.format("%s (%.1f%%)", BuildCompare_FormatNumber(nb), versPctB)
+            valA = BuildCompare_UnboxSecret(versPctA)
+            valB = BuildCompare_UnboxSecret(versPctB)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("Vers", versPctA, versPctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(versPctA, versPctB), ga, gb, 6)
+
+            -- Dodge
+            na, nb = saStats.dodgePct or 0, sbStats.dodgePct or 0
+            if IsSecret(na) or IsSecret(nb) then
+                ta = "Pending"
+                tb = "Pending"
+            else
+                ta = string.format("%.1f%%", na)
+                tb = string.format("%.1f%%", nb)
+            end
+            valA = BuildCompare_UnboxSecret(na)
+            valB = BuildCompare_UnboxSecret(nb)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("Dodge", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+
+            -- Parry
+            na, nb = saStats.parryPct or 0, sbStats.parryPct or 0
+            if IsSecret(na) or IsSecret(nb) then
+                ta = "Pending"
+                tb = "Pending"
+            else
+                ta = string.format("%.1f%%", na)
+                tb = string.format("%.1f%%", nb)
+            end
+            valA = BuildCompare_UnboxSecret(na)
+            valB = BuildCompare_UnboxSecret(nb)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("Parry", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+
+            -- Block
+            na, nb = saStats.blockPct or 0, sbStats.blockPct or 0
+            if IsSecret(na) or IsSecret(nb) then
+                ta = "Pending"
+                tb = "Pending"
+            else
+                ta = string.format("%.1f%%", na)
+                tb = string.format("%.1f%%", nb)
+            end
+            valA = BuildCompare_UnboxSecret(na)
+            valB = BuildCompare_UnboxSecret(nb)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("Block", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 18)
+        end
+
+        local function renderBuffsSection()
+            -- Section 6: Buffs
+            addSection("|cFFFFD100Buffs:|r", 6)
+
+            local aUptimes = a.buffUptimes or {}
+            local bUptimes = b.buffUptimes or {}
+            local uniqueSpells = {}
+            for spellID in pairs(aUptimes) do
+                uniqueSpells[spellID] = true
+            end
+            for spellID in pairs(bUptimes) do
+                uniqueSpells[spellID] = true
+            end
+
+            local function GetSpellName(spellID)
+                if not spellID then return "Unknown" end
+                local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
+                return spellInfo and spellInfo.name or ("Spell " .. spellID)
+            end
+
+            local sortedSpells = {}
+            for spellID in pairs(uniqueSpells) do
+                table.insert(sortedSpells, spellID)
+            end
+            table.sort(sortedSpells, function(s1, s2)
+                local name1 = GetSpellName(s1) or ""
+                local name2 = GetSpellName(s2) or ""
+                return name1 < name2
+            end)
+
+            for _, spellID in ipairs(sortedSpells) do
+                local uptimeA = aUptimes[spellID] or 0
+                local uptimeB = bUptimes[spellID] or 0
+                if uptimeA > 1.0 or uptimeB > 1.0 then
+                    local spellName = GetSpellName(spellID)
+                    local txtA = string.format("%.1f%%", uptimeA)
+                    local txtB = string.format("%.1f%%", uptimeB)
+                    local diffVal = uptimeB - uptimeA
+                    local diffTxt
+                    if diffVal > 0.05 then
+                        diffTxt = string.format("|cFF00FF00+%.1f%%|r", diffVal)
+                    elseif diffVal < -0.05 then
+                        diffTxt = string.format("|cFFFF3333-%.1f%%|r", math.abs(diffVal))
+                    else
+                        diffTxt = "|cFFFFFFFF0.0%|r"
+                    end
+                    local ga = uptimeA > uptimeB
+                    local gb = uptimeB > uptimeA
+                    addRow(spellName, uptimeA, uptimeB, txtA, txtB, diffTxt, ga, gb, 6)
+                end
+            end
+        end
+
+        -- Query specialization role
+        local role = "DAMAGER"
+        if GetSpecialization then
+            local specIdx = GetSpecialization()
+            if specIdx then
+                role = GetSpecializationRole(specIdx) or "DAMAGER"
+            end
+        end
+
+        -- Support manual layout override if stored in BuildCompareDB.settings.preferredLayout
+        local activeLayout = role
+        if BuildCompareDB and BuildCompareDB.settings and BuildCompareDB.settings.preferredLayout then
+            activeLayout = BuildCompareDB.settings.preferredLayout
+        end
+
+        if activeLayout ~= "TANK" and activeLayout ~= "HEALER" and activeLayout ~= "DAMAGER" then
+            activeLayout = "DAMAGER"
+        end
+
+        -- Layout presets
+        local layoutPreset
+        if activeLayout == "TANK" then
+            layoutPreset = { renderTankSection, renderDmgSection, renderHealSection, renderMiscSection }
+        elseif activeLayout == "HEALER" then
+            layoutPreset = { renderHealSection, renderDmgSection, renderTankSection, renderMiscSection }
+        else
+            layoutPreset = { renderDmgSection, renderHealSection, renderTankSection, renderMiscSection }
+        end
+
+        -- Render modular sections dynamically using cumulative y offset
+        for _, renderFunc in ipairs(layoutPreset) do
+            renderFunc()
+        end
+
+        -- Render Stats and Buffs sections at the end
+        renderStatsSection()
+        renderBuffsSection()
 
         -- Resize content for the rows we created + a little padding for scroll
         local finalH = y + 12
