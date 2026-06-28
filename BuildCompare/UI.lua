@@ -764,10 +764,10 @@ function BuildCompare_RefreshUI()
 
         -- === Performance metrics (aligned rows) ===
 
-        -- Survivability & Mitigation
-        addSection("|cFFFFD100Surv & Mit:|r", 6)
+        -- Section 1: Tank
+        addSection("|cFFFFD100Tank:|r", 6)
 
-        -- DT (lower is generally better, but higher raw number still greens per user request)
+        -- DT (total and DTPS, e.g. 470k (13k/s))
         local na, nb = a.dt or 0, b.dt or 0
         local ta, tb
         if IsSecret(na) then
@@ -784,66 +784,85 @@ function BuildCompare_RefreshUI()
         local gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("DT", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 6)
 
-        -- AvDT (avoidable)
-        na, nb = a.avoidableDT or 0, b.avoidableDT or 0
-        if IsSecret(na) then
-            ta = BuildCompare_FormatNumber(na)
-        else
-            ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.avoidableDTPS or 0) .. "/s)"
-        end
-        if IsSecret(nb) then
-            tb = BuildCompare_FormatNumber(nb)
-        else
-            tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.avoidableDTPS or 0) .. "/s)"
-        end
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("AvDT", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 6)
-
-        -- Healing (higher good)
-        na, nb = a.healing or 0, b.healing or 0
-        if IsSecret(na) then
-            ta = BuildCompare_FormatNumber(na)
-        else
-            ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.hps or 0) .. "/s)"
-        end
-        if IsSecret(nb) then
-            tb = BuildCompare_FormatNumber(nb)
-        else
-            tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.hps or 0) .. "/s)"
-        end
-        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
-        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Heal", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
-
-        -- Def CDs count
+        -- Def CDs
         local cda = #(a.defensiveCDsUsed or {})
         local cdb = #(b.defensiveCDsUsed or {})
         ta, tb = tostring(cda), tostring(cdb)
         ga = cda > cdb; gb = cdb > cda
         addRow("Def CDs", cda, cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(cda, cdb), ga, gb, 18)
 
-        -- Damage section
-        addSection("|cFFFFD100Damage Done & DPS:|r", 6)
+        -- Section 2: DMG
+        addSection("|cFFFFD100DMG:|r", 6)
 
+        -- Dmg
         na, nb = a.damage or 0, b.damage or 0
+        ta = BuildCompare_FormatNumber(na)
+        tb = BuildCompare_FormatNumber(nb)
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
+        addRow("Dmg", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
+
+        -- DPS
+        na, nb = a.dps or 0, b.dps or 0
         if IsSecret(na) then
             ta = BuildCompare_FormatNumber(na)
         else
-            ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.dps or 0) .. "/s)"
+            ta = BuildCompare_FormatNumber(na) .. "/s"
         end
         if IsSecret(nb) then
             tb = BuildCompare_FormatNumber(nb)
         else
-            tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.dps or 0) .. "/s)"
+            tb = BuildCompare_FormatNumber(nb) .. "/s"
         end
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Dmg", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 18)
+        addRow("DPS", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
 
-        -- Misc
+        -- Dmg CDs
+        local dmg_cda = #(a.dpsCDsUsed or {})
+        local dmg_cdb = #(b.dpsCDsUsed or {})
+        ta, tb = tostring(dmg_cda), tostring(dmg_cdb)
+        ga = dmg_cda > dmg_cdb; gb = dmg_cdb > dmg_cda
+        addRow("Dmg CDs", dmg_cda, dmg_cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(dmg_cda, dmg_cdb), ga, gb, 18)
+
+        -- Section 3: Heals
+        addSection("|cFFFFD100Heals:|r", 6)
+
+        -- Healing
+        na, nb = a.healing or 0, b.healing or 0
+        ta = BuildCompare_FormatNumber(na)
+        tb = BuildCompare_FormatNumber(nb)
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
+        addRow("Healing", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
+
+        -- HPS
+        na, nb = a.hps or 0, b.hps or 0
+        if IsSecret(na) then
+            ta = BuildCompare_FormatNumber(na)
+        else
+            ta = BuildCompare_FormatNumber(na) .. "/s"
+        end
+        if IsSecret(nb) then
+            tb = BuildCompare_FormatNumber(nb)
+        else
+            tb = BuildCompare_FormatNumber(nb) .. "/s"
+        end
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
+        addRow("HPS", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
+
+        -- Heal CDs
+        local heal_cda = #(a.healingCDsUsed or {})
+        local heal_cdb = #(b.healingCDsUsed or {})
+        ta, tb = tostring(heal_cda), tostring(heal_cdb)
+        ga = heal_cda > heal_cdb; gb = heal_cdb > heal_cda
+        addRow("Heal CDs", heal_cda, heal_cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(heal_cda, heal_cdb), ga, gb, 18)
+
+        -- Section 4: Misc
         addSection("|cFFFFD100Misc:|r", 6)
 
+        -- Interrupts
         na, nb = a.interrupts or 0, b.interrupts or 0
         ta = BuildCompare_FormatNumber(na)
         tb = BuildCompare_FormatNumber(nb)
@@ -851,7 +870,7 @@ function BuildCompare_RefreshUI()
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Interrupts", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
 
-        -- Deaths (lower usually better, neutral diff)
+        -- Deaths
         na, nb = a.deaths or 0, b.deaths or 0
         ta = BuildCompare_FormatNumber(na)
         tb = BuildCompare_FormatNumber(nb)
@@ -859,13 +878,13 @@ function BuildCompare_RefreshUI()
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Deaths", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 60)
 
-        -- === Stats at the bottom, same 3-col aligned format (no "vs" crammed) ===
-        addSection("|cFFFFD100Build Stats (A | B | Diff):|r", 6)
+        -- Section 5: Stats
+        addSection("|cFFFFD100Stats:|r", 6)
 
         local saStats = a.stats or {}
         local sbStats = b.stats or {}
 
-        -- Mastery (rating)
+        -- Mastery
         na, nb = saStats.mastery or 0, sbStats.mastery or 0
         ta = BuildCompare_FormatNumber(na)
         tb = BuildCompare_FormatNumber(nb)
@@ -897,7 +916,46 @@ function BuildCompare_RefreshUI()
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Vers", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
 
-        -- Optional % versions (compact, user can see straight across)
+        -- Dodge
+        na, nb = saStats.dodgePct or 0, sbStats.dodgePct or 0
+        if IsSecret(na) or IsSecret(nb) then
+            ta = "Pending"
+            tb = "Pending"
+        else
+            ta = string.format("%.1f%%", na)
+            tb = string.format("%.1f%%", nb)
+        end
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
+        addRow("Dodge", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
+
+        -- Parry
+        na, nb = saStats.parryPct or 0, sbStats.parryPct or 0
+        if IsSecret(na) or IsSecret(nb) then
+            ta = "Pending"
+            tb = "Pending"
+        else
+            ta = string.format("%.1f%%", na)
+            tb = string.format("%.1f%%", nb)
+        end
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
+        addRow("Parry", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
+
+        -- Block
+        na, nb = saStats.blockPct or 0, sbStats.blockPct or 0
+        if IsSecret(na) or IsSecret(nb) then
+            ta = "Pending"
+            tb = "Pending"
+        else
+            ta = string.format("%.1f%%", na)
+            tb = string.format("%.1f%%", nb)
+        end
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
+        addRow("Block", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
+
+        -- Mast %
         na, nb = saStats.masteryPct or 0, sbStats.masteryPct or 0
         if IsSecret(na) or IsSecret(nb) then
             ta = "Pending"

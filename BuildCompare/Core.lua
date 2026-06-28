@@ -43,6 +43,38 @@ local DEFENSIVE_CDS = {
     [432459] = "Divine Toll",
 }
 
+-- Common DPS cooldowns (spellID -> name)
+local DPS_CDS = {
+    [231895] = "Crusade",
+    [107574] = "Avatar",
+    [190319] = "Combustion",
+    [102560] = "Incarnation: Chosen of Elune",
+    [194223] = "Celestial Alignment",
+    [10060] = "Power Infusion",
+    [2825] = "Bloodlust",
+    [32182] = "Heroism",
+    [47568] = "Empower Rune Weapon",
+    [191427] = "Metamorphosis",
+    [13750] = "Adrenaline Rush",
+    [205180] = "Summon Darkglare",
+    [265187] = "Summon Demonic Tyrant",
+    [31884] = "Avenging Wrath", -- Paladin wings (also dps)
+}
+
+-- Common Healing cooldowns (spellID -> name)
+local HEALING_CDS = {
+    [740] = "Tranquility",
+    [375901] = "Divine Toll",
+    [31821] = "Aura Mastery",
+    [64843] = "Divine Hymn",
+    [62618] = "Power Word: Barrier",
+    [108280] = "Healing Tide Totem",
+    [98008] = "Spirit Link Totem",
+    [115310] = "Revival",
+    [357170] = "Rewind",
+}
+
+
 -- Season 1 data for the new scoped UI (Mythic/Raid dropdowns). Streamlined - only used for filtering display.
 local SEASON_1_MYTHICS = {
     "Magisters' Terrace",
@@ -260,6 +292,10 @@ local function SnapshotPlayerStats()
     ok, value = pcall(GetCombatRatingBonus, CR_VERSATILITY_DAMAGE_DONE)
     stats.versPct = ok and value or 0
 
+    stats.dodgePct = GetDodgeChance() or 0
+    stats.parryPct = GetParryChance() or 0
+    stats.blockPct = GetBlockChance() or 0
+
     stats.class = UnitClass("player") or "Unknown"
     
     stats.spec = "None"
@@ -288,6 +324,8 @@ local function StartActiveRun(buildLabel)
         initialStats = SnapshotPlayerStats(),
         talents = BuildCompare_SnapshotTalents(),
         defensiveCDsUsed = {},
+        dpsCDsUsed = {},
+        healingCDsUsed = {},
         damage = 0,
         dt = 0,
         healing = 0,
@@ -323,6 +361,8 @@ local function StartCustomRun()
                 initialStats = SnapshotPlayerStats(),
                 talents = BuildCompare_SnapshotTalents(),
                 defensiveCDsUsed = {},
+                dpsCDsUsed = {},
+                healingCDsUsed = {},
                 damage = 0,
                 dt = 0,
                 healing = 0,
@@ -348,23 +388,33 @@ local function StopCustomTracking()
     end
 end
 
--- Log a defensive CD usage (called from event handlers)
-local function LogDefensiveCD(spellId, spellName)
-    if not DEFENSIVE_CDS[spellId] then return end  -- only track known defensives
+-- Log a CD usage (called from event handlers)
+local function LogCD(spellId, spellName)
+    if not activeRun then return end
 
-    local name = spellName or DEFENSIVE_CDS[spellId]
+    local isDef = DEFENSIVE_CDS[spellId]
+    local isDps = DPS_CDS[spellId]
+    local isHeal = HEALING_CDS[spellId]
+
+    if not (isDef or isDps or isHeal) then return end
+
+    local name = spellName or isDef or isDps or isHeal
     local cd = {
         spellId = spellId,
         name = name,
         timestamp = time(),
     }
-    if activeRun then
+
+    if isDef then
         table.insert(activeRun.defensiveCDsUsed, cd)
     end
+    if isDps then
+        table.insert(activeRun.dpsCDsUsed, cd)
+    end
+    if isHeal then
+        table.insert(activeRun.healingCDsUsed, cd)
+    end
 end
-
--- (LogDPSCD and LogHealingCD removed as part of streamlining.
--- Only defensive CDs are tracked for defensive usage.)
 
 -- End tracking and auto-record if we have data
 local function EndActiveRunAndRecord(reason)
@@ -570,6 +620,8 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         initialStats = recordSource.initialStats,
         talents = recordSource.talents,
         defensiveCDsUsed = recordSource.defensiveCDsUsed,
+        dpsCDsUsed = recordSource.dpsCDsUsed,
+        healingCDsUsed = recordSource.healingCDsUsed,
         damage = recordSource.damage,
         dt = recordSource.dt,
         healing = recordSource.healing,
@@ -600,6 +652,8 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         local dispels = capturedSource.dispels or 0
         local deaths = capturedSource.deaths or 0
         local defensiveCDsUsed = capturedSource.defensiveCDsUsed or {}
+        local dpsCDsUsed = capturedSource.dpsCDsUsed or {}
+        local healingCDsUsed = capturedSource.healingCDsUsed or {}
         local hasActivity = false
 
         -- Fetch the combat summary directly from the built-in C_DamageMeter (pure WoW, no external addons)
@@ -650,6 +704,8 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
             dispels = dispels,
             deaths = deaths,
             defensiveCDsUsed = defensiveCDsUsed,
+            dpsCDsUsed = dpsCDsUsed,
+            healingCDsUsed = healingCDsUsed,
             meterSessionId = isOverall and "overall" or "current",
         }
 
@@ -793,6 +849,8 @@ local function OnCombatEvent(self, event, ...)
                 initialStats = activeRun.initialStats,
                 talents = activeRun.talents,
                 defensiveCDsUsed = activeRun.defensiveCDsUsed,
+                dpsCDsUsed = activeRun.dpsCDsUsed,
+                healingCDsUsed = activeRun.healingCDsUsed,
                 damage = activeRun.damage,
                 dt = activeRun.dt,
                 healing = activeRun.healing,
@@ -804,8 +862,7 @@ local function OnCombatEvent(self, event, ...)
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         local unit, castGUID, spellID = ...
         if unit == "player" then
-            LogDefensiveCD(spellID)
-            -- Only tracking defensive CDs (DPS/Healing CD lists removed for streamlining)
+            LogCD(spellID)
         end
     elseif event == "PLAYER_DEAD" then
         if activeRun then
