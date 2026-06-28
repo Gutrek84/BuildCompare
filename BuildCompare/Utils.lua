@@ -18,7 +18,7 @@ end
 function BuildCompare_FormatNumber(val)
     if not val then return "0" end
     if IsSecret(val) then
-        return val  -- Return the secret value directly for C++ rendering
+        return _G.AbbreviateNumbers and _G.AbbreviateNumbers(val) or val
     end
     local num = tonumber(val)
     if not num then return tostring(val) end

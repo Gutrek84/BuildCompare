@@ -49,7 +49,7 @@ end
 local function SafeDisplayVal(val)
     if not val then return "0" end
     if IsSecret(val) then
-        return val  -- pass secret through for engine to abbreviate in SetFormattedText/SetText
+        return _G.AbbreviateNumbers and _G.AbbreviateNumbers(val) or val
     end
     return BuildCompare_FormatNumber(val)
 end
@@ -73,6 +73,28 @@ local function ToSafeString(val)
         return val
     end
     return tostring(val)
+end
+
+local function MakeScrollFrameTaintSafe(scrollFrame)
+    scrollFrame:SetScript("OnScrollRangeChanged", function(self, xrange, yrange)
+        local scrollbar = self.ScrollBar or (self:GetName() and _G[self:GetName() .. "ScrollBar"])
+        if not scrollbar then return end
+
+        local scrollChild = self:GetScrollChild()
+        if not scrollChild then return end
+
+        local childHeight = scrollChild:GetHeight() or 0
+        local frameHeight = self:GetHeight() or 0
+        local y = childHeight - frameHeight
+        if y < 0 then y = 0 end
+
+        scrollbar:SetMinMaxValues(0, y)
+        if y > 0 then
+            scrollbar:Enable()
+        else
+            scrollbar:Disable()
+        end
+    end)
 end
 
 local frame = nil
@@ -419,6 +441,7 @@ function BuildCompare_CreateMainFrame()
     listFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", 310, 50)  -- give more room to the compare panel on the right for wider columns (shifted left for 3-col breathing room)
 
     scroll = CreateFrame("ScrollFrame", nil, listFrame, "UIPanelScrollFrameTemplate")
+    MakeScrollFrameTaintSafe(scroll)
     scroll:SetPoint("TOPLEFT", 4, -4)
     scroll:SetPoint("BOTTOMRIGHT", -28, 4)
 
@@ -469,6 +492,7 @@ function BuildCompare_CreateMainFrame()
 
     -- ScrollFrame for comparison details
     local compareScroll = CreateFrame("ScrollFrame", "BuildCompareCompareScroll", frame.comparePanel, "UIPanelScrollFrameTemplate")
+    MakeScrollFrameTaintSafe(compareScroll)
     compareScroll:SetPoint("TOPLEFT", 4, -4)
     compareScroll:SetPoint("BOTTOMRIGHT", -28, 4)
 

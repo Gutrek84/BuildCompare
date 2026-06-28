@@ -624,7 +624,7 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         -- (Removed solo auto-run logic per narrowed scope; no more per-pack dummy/delve/outdoor records)
 
         local buildLabel = optionalLabel or capturedSource.buildLabel or ("Build " .. date("%H%M"))
-        local stats = capturedSource.initialStats or SnapshotPlayerStats()
+        local stats = SnapshotPlayerStats()
         local ts = time()
 
         local record = {
@@ -695,8 +695,21 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
     end
 
     -- Delay the finalization slightly to ensure C_DamageMeter is fully populated
-    Print("Finalizing combat data in 2.0 seconds...")
-    C_Timer.After(2.0, FinalizeRecord)
+    if InCombatLockdown() then
+        Print("Combat still active. Finalizing run as soon as you drop combat...")
+        local f = CreateFrame("Frame")
+        f:RegisterEvent("PLAYER_REGEN_ENABLED")
+        f:SetScript("OnEvent", function(self)
+            Print("Dropped combat. Finalizing combat data in 2.0 seconds...")
+            C_Timer.After(2.0, function()
+                FinalizeRecord()
+            end)
+            self:UnregisterAllEvents()
+        end)
+    else
+        Print("Finalizing combat data in 2.0 seconds...")
+        C_Timer.After(2.0, FinalizeRecord)
+    end
 end
 
 function BuildCompare_ClearDB()
