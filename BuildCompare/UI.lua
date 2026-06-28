@@ -343,7 +343,7 @@ function BuildCompare_CreateMainFrame()
             -- Position + size the minimize button snug against the X
             local mb = frame.minBtn
             if mb then
-                local size = cb:GetWidth() or 20
+                local size = cb:GetWidth() or 32
                 mb:SetSize(size, size)
                 mb:ClearAllPoints()
                 mb:SetPoint("TOPRIGHT", cb, "TOPLEFT", -1, 0)  -- 1px gap, same top, left of X
@@ -352,19 +352,30 @@ function BuildCompare_CreateMainFrame()
                 mb:SetPushedTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Down")
                 mb:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight")
 
+                local normText = mb:GetNormalTexture()
+                if normText then normText:SetAllPoints(mb) end
+                local pushText = mb:GetPushedTexture()
+                if pushText then pushText:SetAllPoints(mb) end
+                local hlText = mb:GetHighlightTexture()
+                if hlText then hlText:SetAllPoints(mb) end
+
+                local maskSize = math.floor(size * 0.45)
+                local lineW = math.floor(size * 0.45)
+                local lineH = math.max(2, math.floor(size * 0.08))
+
                 if not mb.mask then
                     mb.mask = mb:CreateTexture(nil, "OVERLAY", nil, 1)
-                    mb.mask:SetSize(10, 10)
                     mb.mask:SetPoint("CENTER", mb, "CENTER", 0, 0)
                     mb.mask:SetColorTexture(0.42, 0.05, 0.05, 1)
                 end
+                mb.mask:SetSize(maskSize, maskSize)
 
                 if not mb.minusLine then
                     mb.minusLine = mb:CreateTexture(nil, "OVERLAY", nil, 2)
-                    mb.minusLine:SetSize(10, 2)
                     mb.minusLine:SetPoint("CENTER", mb, "CENTER", 0, 0)
                     mb.minusLine:SetColorTexture(0.9, 0.8, 0.1, 1)
                 end
+                mb.minusLine:SetSize(lineW, lineH)
 
                 -- Tooltip for clarity (matches normal window behavior)
                 mb:SetScript("OnEnter", function(self)
