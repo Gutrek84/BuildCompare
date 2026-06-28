@@ -744,28 +744,28 @@ function BuildCompare_RefreshUI()
         local y = 2
         local rows = frame.compareRows
 
-        local function addRow(m, rawA, rawB, txtA, txtB, diffTxt, greenA, greenB)
+        local function addRow(m, rawA, rawB, txtA, txtB, diffTxt, greenA, greenB, spacingAfter)
             local r, h = CreateAlignedCompareRow(content, y, false, m, txtA, txtB, diffTxt, greenA, greenB)
             table.insert(rows, r)
-            y = y + h + 1
+            y = y + h + (spacingAfter or 1)
             return h
         end
 
-        local function addSection(title)
+        local function addSection(title, spacingAfter)
             local r, h = CreateAlignedCompareRow(content, y, true, title, "", "", "", false, false)
             table.insert(rows, r)
-            y = y + h + 2
+            y = y + h + (spacingAfter or 2)
         end
 
         -- Header row with the actual run labels (so user sees which is A vs B)
         local hr, hh = CreateAlignedCompareRow(content, y, true, "Metric", "A: " .. labelA, "B: " .. labelB, "% Diff", false, false)
         table.insert(rows, hr)
-        y = y + hh + 2
+        y = y + hh + 12
 
         -- === Performance metrics (aligned rows) ===
 
         -- Survivability & Mitigation
-        addSection("|cFFFFD100Surv & Mit:|r")
+        addSection("|cFFFFD100Surv & Mit:|r", 6)
 
         -- DT (lower is generally better, but higher raw number still greens per user request)
         local na, nb = a.dt or 0, b.dt or 0
@@ -782,7 +782,7 @@ function BuildCompare_RefreshUI()
         end
         local ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         local gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("DT", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb)
+        addRow("DT", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 6)
 
         -- AvDT (avoidable)
         na, nb = a.avoidableDT or 0, b.avoidableDT or 0
@@ -798,7 +798,7 @@ function BuildCompare_RefreshUI()
         end
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("AvDT", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb)
+        addRow("AvDT", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 6)
 
         -- Healing (higher good)
         na, nb = a.healing or 0, b.healing or 0
@@ -814,17 +814,17 @@ function BuildCompare_RefreshUI()
         end
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Heal", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb)
+        addRow("Heal", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
 
         -- Def CDs count
         local cda = #(a.defensiveCDsUsed or {})
         local cdb = #(b.defensiveCDsUsed or {})
         ta, tb = tostring(cda), tostring(cdb)
         ga = cda > cdb; gb = cdb > cda
-        addRow("Def CDs", cda, cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(cda, cdb), ga, gb)
+        addRow("Def CDs", cda, cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(cda, cdb), ga, gb, 18)
 
         -- Damage section
-        addSection("|cFFFFD100Damage Done & DPS:|r")
+        addSection("|cFFFFD100Damage Done & DPS:|r", 6)
 
         na, nb = a.damage or 0, b.damage or 0
         if IsSecret(na) then
@@ -839,17 +839,17 @@ function BuildCompare_RefreshUI()
         end
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Dmg", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb)
+        addRow("Dmg", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 18)
 
         -- Misc
-        addSection("|cFFFFD100Misc:|r")
+        addSection("|cFFFFD100Misc:|r", 6)
 
         na, nb = a.interrupts or 0, b.interrupts or 0
         ta = BuildCompare_FormatNumber(na)
         tb = BuildCompare_FormatNumber(nb)
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Interrupts", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb)
+        addRow("Interrupts", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb, 6)
 
         -- Deaths (lower usually better, neutral diff)
         na, nb = a.deaths or 0, b.deaths or 0
@@ -857,10 +857,10 @@ function BuildCompare_RefreshUI()
         tb = BuildCompare_FormatNumber(nb)
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Deaths", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb)
+        addRow("Deaths", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 60)
 
         -- === Stats at the bottom, same 3-col aligned format (no "vs" crammed) ===
-        addSection("|cFFFFD100Build Stats (A | B | Diff):|r")
+        addSection("|cFFFFD100Build Stats (A | B | Diff):|r", 6)
 
         local saStats = a.stats or {}
         local sbStats = b.stats or {}
@@ -871,7 +871,7 @@ function BuildCompare_RefreshUI()
         tb = BuildCompare_FormatNumber(nb)
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Mastery", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb)
+        addRow("Mastery", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
 
         -- Crit
         na, nb = saStats.crit or 0, sbStats.crit or 0
@@ -879,7 +879,7 @@ function BuildCompare_RefreshUI()
         tb = BuildCompare_FormatNumber(nb)
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Crit", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb)
+        addRow("Crit", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
 
         -- Haste
         na, nb = saStats.haste or 0, sbStats.haste or 0
@@ -887,7 +887,7 @@ function BuildCompare_RefreshUI()
         tb = BuildCompare_FormatNumber(nb)
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Haste", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb)
+        addRow("Haste", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
 
         -- Vers
         na, nb = saStats.vers or 0, sbStats.vers or 0
@@ -895,7 +895,7 @@ function BuildCompare_RefreshUI()
         tb = BuildCompare_FormatNumber(nb)
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Vers", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb)
+        addRow("Vers", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
 
         -- Optional % versions (compact, user can see straight across)
         na, nb = saStats.masteryPct or 0, sbStats.masteryPct or 0
@@ -908,7 +908,7 @@ function BuildCompare_RefreshUI()
         end
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
-        addRow("Mast %", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb)
+        addRow("Mast %", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 4)
 
         -- Resize content for the rows we created + a little padding for scroll
         local finalH = y + 12
