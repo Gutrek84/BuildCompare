@@ -471,6 +471,10 @@ local function GetNativeMeterData(preferCurrent)
     local healD = fetchForType(Enum.DamageMeterType.HealingDone, lockedSessionID)
     local hpsD = fetchForType(Enum.DamageMeterType.Hps, lockedSessionID)
     local avoidD = fetchForType(Enum.DamageMeterType.AvoidableDamageTaken, lockedSessionID)
+    if lockedSessionID then
+        dtD = nil
+        avoidD = nil
+    end
     local dmgD = fetchForType(Enum.DamageMeterType.DamageDone, lockedSessionID)
     local dpsD = fetchForType(Enum.DamageMeterType.Dps, lockedSessionID)
     local intD = fetchForType(Enum.DamageMeterType.Interrupts, lockedSessionID)
