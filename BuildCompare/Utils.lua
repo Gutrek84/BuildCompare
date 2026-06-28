@@ -113,6 +113,46 @@ function BuildCompare_GetRunLabel(run)
     return string.format("%s %s %s (%s)", run.instance, run.difficulty, key, run.buildLabel)
 end
 
+function BuildCompare_GetColumnHeaderLabel(run)
+    if not run then return "?" end
+    local runType = run.runType or ""
+    local difficulty = run.difficulty or ""
+    local instance = run.instance or ""
+    
+    if instance == "Custom" or difficulty == "Custom" or runType == "custom" or runType == "Custom" then
+        return run.buildLabel or "Custom"
+    elseif runType == "raid" or runType == "Raid" or (run.boss ~= nil or run.bossName ~= nil) then
+        return run.boss or run.bossName or "Raid"
+    elseif runType == "mythic" or runType == "Mythic" or (run.keyLevel and run.keyLevel > 0) then
+        local dungeon = run.dungeon or run.instance or "Dungeon"
+        local abbrev = dungeon
+        if dungeon == "Magisters' Terrace" then
+            abbrev = "Terrace"
+        elseif dungeon == "Maisara Caverns" then
+            abbrev = "Caverns"
+        elseif dungeon == "Nexus-Point Xenas" then
+            abbrev = "Xenas"
+        elseif dungeon == "Windrunner Spire" then
+            abbrev = "Spire"
+        elseif dungeon == "Algeth'ar Academy" then
+            abbrev = "Academy"
+        elseif dungeon == "Pit of Saron" then
+            abbrev = "Pit"
+        elseif dungeon == "Seat of the Triumvirate" then
+            abbrev = "Seat"
+        elseif dungeon == "Skyreach" then
+            abbrev = "Skyreach"
+        end
+        local keyLevel = run.keyLevel or 0
+        if keyLevel > 0 then
+            return abbrev .. " +" .. keyLevel
+        else
+            return abbrev
+        end
+    end
+    return run.buildLabel or "?"
+end
+
 function BuildCompare_FormatCDs(cds)
     if not cds or #cds == 0 then return "none" end
     return #cds .. " used"

@@ -116,19 +116,20 @@ local function CreateBarRow(parent, index, run)
     row.selectBtn:SetText("Sel")
     row.selectBtn:SetScript("OnClick", function()
         if not run or not run.id then return end
-        if selectedForCompare[run.id] then
-            selectedForCompare[run.id] = nil
-            row.selectBtn:SetText("Sel")
+        local foundIndex = nil
+        for i, r in ipairs(selectedForCompare) do
+            if r.id == run.id then
+                foundIndex = i
+                break
+            end
+        end
+        if foundIndex then
+            table.remove(selectedForCompare, foundIndex)
         else
-            -- Cap selection at 2 for comparison
-            local count = 0
-            for _ in pairs(selectedForCompare) do count = count + 1 end
-            if count >= 2 then
-                -- Clear old selection to keep it to 2 max
+            if #selectedForCompare >= 2 then
                 selectedForCompare = {}
             end
-            selectedForCompare[run.id] = run
-            row.selectBtn:SetText("X")
+            table.insert(selectedForCompare, run)
         end
         BuildCompare_RefreshUI()  -- refresh to update compare panel
     end)
@@ -658,11 +659,13 @@ function BuildCompare_RefreshUI()
             runsSet[r.id] = true
         end
     end
-    for id in pairs(selectedForCompare) do
-        if not runsSet[id] then
-            selectedForCompare[id] = nil
+    local newSelected = {}
+    for _, r in ipairs(selectedForCompare) do
+        if r.id and runsSet[r.id] then
+            table.insert(newSelected, r)
         end
     end
+    selectedForCompare = newSelected
 
     -- Clear old rows
     for _, row in ipairs(frame.rows or {}) do row:Hide() end
@@ -700,8 +703,10 @@ function BuildCompare_RefreshUI()
         end
 
         -- Pre-select state
-        if selectedForCompare[run.id] then
-            row.selectBtn:SetText("X")
+        if selectedForCompare[1] and selectedForCompare[1].id == run.id then
+            row.selectBtn:SetText("A")
+        elseif selectedForCompare[2] and selectedForCompare[2].id == run.id then
+            row.selectBtn:SetText("B")
         else
             row.selectBtn:SetText("Sel")
         end
@@ -717,8 +722,7 @@ function BuildCompare_RefreshUI()
     -- Every data line (DT of A next to DT of B etc) shares the exact same vertical position.
     -- Higher raw number on a row gets green in its column (as requested).
     -- Stats are shown in the exact same 3-col format at the bottom (no crammed "vs" text).
-    local selectedList = {}
-    for id, r in pairs(selectedForCompare) do table.insert(selectedList, r) end
+    local selectedList = selectedForCompare
 
     -- Hide old row frames from previous compare (safe for any non-Frame entries)
     if frame.compareRows then
@@ -734,8 +738,8 @@ function BuildCompare_RefreshUI()
     if #selectedList >= 2 then
         local a = selectedList[1]
         local b = selectedList[2] or a
-        local labelA = BuildCompare_GetRunLabel(a) or "A"
-        local labelB = BuildCompare_GetRunLabel(b) or "B"
+        local labelA = BuildCompare_GetColumnHeaderLabel(a) or "A"
+        local labelB = BuildCompare_GetColumnHeaderLabel(b) or "B"
         -- Truncate long labels for the header row (more aggressive truncation so full "A: " + name fits safely inside the (now wider) A_W/B_W columns)
         if #labelA > 20 then labelA = labelA:sub(1,18) .. "..." end
         if #labelB > 20 then labelB = labelB:sub(1,18) .. "..." end
