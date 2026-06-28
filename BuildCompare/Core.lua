@@ -174,7 +174,7 @@ local function BuildCompare_DebugMeter()
                 if IsSecret(val) then
                     return "Pending Reload"
                 end
-                return tostring(val)
+                return BuildCompare_FormatNumber(val)
             end
             Print(string.format("Native C_DamageMeter Summary: Duration=%s, Damage=%s, DT=%s, AvDT=%s, Heal=%s, DPS=%s, DTPS=%s, HPS=%s, HasActivity=%s",
                 tostring(nativeSummary.duration or 0), SafeFormatVal(nativeSummary.damage), SafeFormatVal(nativeSummary.dt),
@@ -471,10 +471,6 @@ local function GetNativeMeterData(preferCurrent)
     local healD = fetchForType(Enum.DamageMeterType.HealingDone, lockedSessionID)
     local hpsD = fetchForType(Enum.DamageMeterType.Hps, lockedSessionID)
     local avoidD = fetchForType(Enum.DamageMeterType.AvoidableDamageTaken, lockedSessionID)
-    if lockedSessionID then
-        dtD = nil
-        avoidD = nil
-    end
     local dmgD = fetchForType(Enum.DamageMeterType.DamageDone, lockedSessionID)
     local dpsD = fetchForType(Enum.DamageMeterType.Dps, lockedSessionID)
     local intD = fetchForType(Enum.DamageMeterType.Interrupts, lockedSessionID)
@@ -677,15 +673,15 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
             if IsSecret(val) then
                 return "Pending Reload"
             end
-            return tostring(val)
+            return BuildCompare_FormatNumber(val)
         end
 
         local function SafeFormatRate(val)
-            if not val then return "0.0" end
+            if not val then return "0" end
             if IsSecret(val) then
                 return "Pending Reload"
             end
-            return string.format("%.1f", val)
+            return BuildCompare_FormatNumber(val)
         end
 
         Print(string.format("Recorded run: %s - %s +%d | DT: %s (%s DTPS) | AvDT: %s | Heal: %s | DefCDs: %d | Build: %s",

@@ -60,7 +60,7 @@ local function SafeFormatVal(val)
     if IsSecret(val) then
         return "Pending Reload"
     end
-    return tostring(val)
+    return BuildCompare_FormatNumber(val)
 end
 
 -- Safe string for use in table.concat / manual string building in compare panel etc.
@@ -130,7 +130,7 @@ local function CreateBarRow(parent, index, run)
     -- Text overlay on bar
     row.text = row.dtBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.text:SetPoint("LEFT", row.dtBar, "LEFT", 4, 0)
-    row.text:SetText("DT: 0 | Heal: 0")
+    row.text:SetText("DT: " .. BuildCompare_FormatNumber(0) .. " | Heal: " .. BuildCompare_FormatNumber(0))
 
     -- Store run ref
     row.run = run
@@ -520,15 +520,15 @@ local function CreateAlignedCompareRow(parent, y, isHeader, metric, aVal, bVal, 
         row.a = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         row.a:SetPoint("LEFT", row.label, "RIGHT", 3, 0)
         row.a:SetWidth(A_W)
-        row.a:SetText(aVal or "")
+        row.a:SetFormattedText("%s", aVal or "")
         row.b = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         row.b:SetPoint("LEFT", row.a, "RIGHT", 3, 0)
         row.b:SetWidth(B_W)
-        row.b:SetText(bVal or "")
+        row.b:SetFormattedText("%s", bVal or "")
         row.d = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         row.d:SetPoint("LEFT", row.b, "RIGHT", 3, 0)
         row.d:SetWidth(DIFF_W)
-        row.d:SetText(diffVal or "")
+        row.d:SetFormattedText("%s", diffVal or "")
     else
         -- metric / label col
         row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -546,11 +546,15 @@ local function CreateAlignedCompareRow(parent, y, isHeader, metric, aVal, bVal, 
         row.a = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         row.a:SetPoint("LEFT", v1, "RIGHT", 2, 0)
         row.a:SetWidth(A_W)
-        local aText = tostring(aVal or "")
-        if aIsGreen then
-            aText = "|cFF00FF00" .. aText .. "|r"
+        if IsSecret(aVal) then
+            row.a:SetFormattedText("%s", aVal)
+        else
+            local aText = tostring(aVal or "")
+            if aIsGreen then
+                aText = "|cFF00FF00" .. aText .. "|r"
+            end
+            row.a:SetFormattedText("%s", aText)
         end
-        row.a:SetText(aText)
 
         -- vertical divider after A
         local v2 = row:CreateTexture(nil, "OVERLAY")
@@ -562,11 +566,15 @@ local function CreateAlignedCompareRow(parent, y, isHeader, metric, aVal, bVal, 
         row.b = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         row.b:SetPoint("LEFT", v2, "RIGHT", 2, 0)
         row.b:SetWidth(B_W)
-        local bText = tostring(bVal or "")
-        if bIsGreen then
-            bText = "|cFF00FF00" .. bText .. "|r"
+        if IsSecret(bVal) then
+            row.b:SetFormattedText("%s", bVal)
+        else
+            local bText = tostring(bVal or "")
+            if bIsGreen then
+                bText = "|cFF00FF00" .. bText .. "|r"
+            end
+            row.b:SetFormattedText("%s", bText)
         end
-        row.b:SetText(bText)
 
         -- vertical divider after B
         local v3 = row:CreateTexture(nil, "OVERLAY")
@@ -578,7 +586,7 @@ local function CreateAlignedCompareRow(parent, y, isHeader, metric, aVal, bVal, 
         row.d = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         row.d:SetPoint("LEFT", v3, "RIGHT", 2, 0)
         row.d:SetWidth(DIFF_W)
-        row.d:SetText(tostring(diffVal or ""))
+        row.d:SetFormattedText("%s", tostring(diffVal or ""))
     end
 
     return row, rowH
@@ -1086,20 +1094,20 @@ function BuildCompare_ShowMiniCurrent()
         -- Live data lines (compact, 4 rows of text)
         miniFrame.dtLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         miniFrame.dtLine:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -34)
-        miniFrame.dtLine:SetText("DT: 0 (0/s)")
+        miniFrame.dtLine:SetText("DT: " .. BuildCompare_FormatNumber(0) .. " (" .. BuildCompare_FormatNumber(0) .. "/s)")
 
         miniFrame.avdtLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         miniFrame.avdtLine:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -47)
-        miniFrame.avdtLine:SetText("AvDT: 0 (0/s)")
+        miniFrame.avdtLine:SetText("AvDT: " .. BuildCompare_FormatNumber(0) .. " (" .. BuildCompare_FormatNumber(0) .. "/s)")
 
         miniFrame.healLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         miniFrame.healLine:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -60)
-        miniFrame.healLine:SetText("Heal: 0 (0/s)")
+        miniFrame.healLine:SetText("Heal: " .. BuildCompare_FormatNumber(0) .. " (" .. BuildCompare_FormatNumber(0) .. "/s)")
 
         -- New: player's damage done (useful context when mini is placed over the default WoW damage meters)
         miniFrame.dmgLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         miniFrame.dmgLine:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -73)
-        miniFrame.dmgLine:SetText("Dmg: 0 (0/s)")
+        miniFrame.dmgLine:SetText("Dmg: " .. BuildCompare_FormatNumber(0) .. " (" .. BuildCompare_FormatNumber(0) .. "/s)")
 
         miniFrame.cdsLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         miniFrame.cdsLine:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -86)

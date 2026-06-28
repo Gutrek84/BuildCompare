@@ -13,7 +13,8 @@ local function IsSecret(val)
     return issecretvalue(val)
 end
 
--- Format large numbers into clean abbreviations (e.g. 1.5k, 15.5k, 155.5k, 1.5m)
+-- Format large numbers into clean abbreviations (e.g. 1.5k, 15k, 150k, 1.0m, 15m, 150m)
+-- <1000 as integer; for k/m: 1 decimal only if the scaled value is <10, whole number without decimal when >=10 (exact user spec)
 function BuildCompare_FormatNumber(val)
     if not val then return "0" end
     if IsSecret(val) then
@@ -23,9 +24,19 @@ function BuildCompare_FormatNumber(val)
     if not num then return tostring(val) end
     
     if num >= 1000000 then
-        return string.format("%.1fm", num / 1000000)
+        local scaled = num / 1000000
+        if scaled < 10 then
+            return string.format("%.1fm", scaled)
+        else
+            return string.format("%.0fm", scaled)
+        end
     elseif num >= 1000 then
-        return string.format("%.1fk", num / 1000)
+        local scaled = num / 1000
+        if scaled < 10 then
+            return string.format("%.1fk", scaled)
+        else
+            return string.format("%.0fk", scaled)
+        end
     else
         return string.format("%d", num)
     end
