@@ -1,169 +1,263 @@
--- BuildCompare/Utils.lua
--- Pure helpers: stats, instance detection, formatting. No frames or saved state.
-
+-- Wrapper to handle removal of global GetSpellInfo in WoW TWW (11.0+) / Midnight (12.0+)
 local AddonName, _ = ...
 
-function BuildCompare_SnapshotPlayerStats()
-    local stats = {}
-    stats.mastery = GetCombatRating(CR_MASTERY) or 0
-    stats.crit = GetCombatRating(CR_CRIT) or 0
-    stats.haste = GetCombatRating(CR_HASTE) or 0
-    stats.vers = GetCombatRating(CR_VERSATILITY) or 0
-
-    stats.masteryPct = GetMastery() or 0
-    stats.critPct = GetCritChance() or 0
-    stats.hastePct = GetHaste() or 0
-    stats.versPct = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) or 0  -- adjust constant if needed
-
-    stats.specID, stats.specName = GetSpecializationInfo(GetSpecialization() or 0)
-    stats.class = select(2, UnitClass("player"))
-
-    return stats
+local GetSpellInfo = GetSpellInfo or function(spellID)
+    if not spellID then return nil end
+    local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
+    return spellInfo and spellInfo.name
 end
 
-function BuildCompare_GetCurrentInstanceInfo()
-    local inInstance, instanceType = IsInInstance()
-    if not inInstance then return nil end
+-- Taint-safe helpers for Patch 12.0+ (Midnight) secret values
+local issecretvalue = issecretvalue or function() return false end
+local function IsSecret(val)
+    return issecretvalue(val)
+end
 
-    local name, _, difficultyID, difficultyName = GetInstanceInfo()
-    local keystoneLevel = 0
-    if C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo then
-        keystoneLevel = select(1, C_ChallengeMode.GetActiveKeystoneInfo()) or 0
+-- Format large numbers into clean abbreviations (e.g. 1.5k, 15.5k, 155.5k, 1.5m)
+function BuildCompare_FormatNumber(val)
+    if not val then return "0" end
+    if IsSecret(val) then
+        return val  -- Return the secret value directly for C++ rendering
     end
-
-    return {
-        name = name,
-        difficultyID = difficultyID,
-        difficultyName = difficultyName,
-        keyLevel = keystoneLevel,
-        instanceType = instanceType,
-    }
+    local num = tonumber(val)
+    if not num then return tostring(val) end
+    
+    if num >= 1000000 then
+        return string.format("%.1fm", num / 1000000)
+    elseif num >= 1000 then
+        return string.format("%.1fk", num / 1000)
+    else
+        return string.format("%d", num)
+    end
 end
 
--- Format percentage difference (positive = better for the second value when comparing B vs A)
-function BuildCompare_FormatPercentDiff(a, b)
-    if not a or not b or a == 0 then return "N/A" end
+-- Format seconds into short timer string e.g. "1m 23s" or "45s" (for mini live recording timer)
+-- Must be taint-safe: duration from C_DamageMeter can be a secret number (see getSafeDur in Core + IsSecret usage throughout).
+function BuildCompare_FormatDuration(secs)
+    if IsSecret(secs) then
+        return "live"
+    end
+    if not secs or secs < 0 then secs = 0 end
+    local s = math.floor(tonumber(secs) or 0)
+    local m = math.floor(s / 60)
+    s = s % 60
+    if m > 0 then
+        return string.format("%dm %02ds", m, s)
+    else
+        return string.format("%ds", s)
+    end
+end
+
+
+-- Format percentage difference (lower value is better, e.g. damage taken)
+function BuildCompare_FormatPercentDiffLowerBetter(a, b)
+    if IsSecret(a) or IsSecret(b) then return "N/A" end
+    a = tonumber(a) or 0
+    b = tonumber(b) or 0
+    if a == 0 and b == 0 then return "0.0%" end
+    if a == 0 then
+        return (b > 0 and "|cFFFF3333+inf%|r" or "0.0%")
+    end
     local diff = ((b - a) / a) * 100
     local sign = diff > 0 and "+" or ""
-    local color = diff < 0 and "|cFF00FF00" or "|cFFFF0000"   -- green better for tank (lower DT), red worse. Customize.
+    local color = diff < 0 and "|cFF00FF00" or (diff > 0 and "|cFFFF3333" or "|cFFFFFFFF")
     return string.format("%s%s%.1f%%|r", color, sign, diff)
 end
 
--- Extract a compact summary from a C_DamageMeter session table
--- Call this after you have inspected the real table structure in-game:
--- /dump C_DamageMeter.GetCombatSessionFromType("Overall")
-function BuildCompare_GetMeterSessionSummary(session)
-    if not session then return nil end
-
-    local playerName = UnitName("player")
-    local sum = { dt = 0, healing = 0, duration = session.duration or session.elapsed or 0 }
-
-    -- actors array or similar; field names are examples — verify live
-    local actors = session.actors or session.participants or {}
-    for _, actor in ipairs(actors) do
-        if actor.name == playerName or actor.unitName == playerName then
-            sum.dt = actor.damageTaken or actor.totalDamageTaken or actor.dt or 0
-            sum.healing = actor.healingDone or actor.totalHealing or actor.heal or 0
-            sum.absorbs = actor.totalAbsorbs or actor.absorbs or actor.absorb or 0
-
-            sum.damageBreakdown = {
-                physical = actor.damageTakenPhysical or actor.physicalDamageTaken or 0,
-                magic = actor.damageTakenMagic or actor.spellDamageTaken or 0,
-            }
-            break
-        end
+-- Format percentage difference (higher value is better, e.g. healing/dps)
+function BuildCompare_FormatPercentDiffHigherBetter(a, b)
+    if IsSecret(a) or IsSecret(b) then return "N/A" end
+    a = tonumber(a) or 0
+    b = tonumber(b) or 0
+    if a == 0 and b == 0 then return "0.0%" end
+    if a == 0 then
+        return (b > 0 and "|cFF00FF00+inf%|r" or "0.0%")
     end
+    local diff = ((b - a) / a) * 100
+    local sign = diff > 0 and "+" or ""
+    local color = diff > 0 and "|cFF00FF00" or (diff < 0 and "|cFFFF3333" or "|cFFFFFFFF")
+    return string.format("%s%s%.1f%%|r", color, sign, diff)
+end
 
-    if sum.duration > 0 then
-        sum.dtps = sum.dt / sum.duration
-        sum.hps = sum.healing / sum.duration
-    end
-
-    return sum
+-- Format percentage difference (neutral, e.g. stats)
+function BuildCompare_FormatPercentDiffNeutral(a, b)
+    if IsSecret(a) or IsSecret(b) then return "0.0%" end
+    a = tonumber(a) or 0
+    b = tonumber(b) or 0
+    if a == 0 and b == 0 then return "0.0%" end
+    local diff = ((b - a) / a) * 100
+    local sign = diff > 0 and "+" or ""
+    return string.format("|cFF80EAFF%s%.1f%%|r", sign, diff)
 end
 
 -- Convenience: short label for a run record
 function BuildCompare_GetRunLabel(run)
     if not run then return "?" end
-    local key = run.keyLevel > 0 and ("+" .. run.keyLevel) or ""
+    local key = ""
+    if run.isDelve then
+        key = run.keyLevel > 0 and (" Delve+" .. run.keyLevel) or " Delve"
+    elseif run.keyLevel > 0 then
+        key = "+" .. run.keyLevel
+    end
     return string.format("%s %s %s (%s)", run.instance, run.difficulty, key, run.buildLabel)
 end
 
-function BuildCompare_FormatDefensives(run)
-    local cds = run.defensiveCDsUsed or {}
-    if #cds == 0 then return "none" end
+function BuildCompare_FormatCDs(cds)
+    if not cds or #cds == 0 then return "none" end
     return #cds .. " used"
-    -- Could expand to list names if wanted: table.concat names
 end
 
-function BuildCompare_FormatDamageBreakdown(run)
-    local db = run.damageBreakdown or {}
-    if (db.physical or 0) + (db.magic or 0) == 0 then return "" end
-    return string.format("Phys: %d / Magic: %d", db.physical or 0, db.magic or 0)
+function BuildCompare_FormatCDsDetailed(cds)
+    if not cds or #cds == 0 then return "None" end
+    local counts = {}
+    for _, cd in ipairs(cds) do
+        counts[cd.name] = (counts[cd.name] or 0) + 1
+    end
+    local list = {}
+    for name, count in pairs(counts) do
+        table.insert(list, string.format("%s (%d)", name, count))
+    end
+    table.sort(list)
+    return table.concat(list, ", ")
 end
 
--- Format a single stat line for comparison: "Mastery      | 24500 vs 19800 | +23.7%"
-function BuildCompare_FormatStatDelta(label, valA, valB)
+function BuildCompare_FormatDefensives(run)
+    return BuildCompare_FormatCDs(run.defensiveCDsUsed)
+end
+
+function BuildCompare_FormatDefensivesDetailed(run)
+    return BuildCompare_FormatCDsDetailed(run.defensiveCDsUsed)
+end
+
+
+
+-- Format a single stat line for comparison: "Mastery: 24500 vs 19800 (+23.7%)"
+function BuildCompare_FormatStatDelta(label, valA, valB, percentLabel)
     local a = valA or 0
     local b = valB or 0
-    local diff = BuildCompare_FormatPercentDiff(a, b)
-    return string.format("%-12s | %8s vs %8s | %s", label, tostring(a), tostring(b), diff)
+    local diff = BuildCompare_FormatPercentDiffNeutral(a, b)
+    local aDisp = IsSecret(a) and "Pending" or (percentLabel and tostring(a) or BuildCompare_FormatNumber(a))
+    local bDisp = IsSecret(b) and "Pending" or (percentLabel and tostring(b) or BuildCompare_FormatNumber(b))
+    if IsSecret(a) or IsSecret(b) then
+        local formatStr = percentLabel and " - %s: %s%% vs %s%% (%s)" or " - %s: %s vs %s (%s)"
+        return string.format(formatStr, label, aDisp, bDisp, diff)
+    end
+    local formatStr = percentLabel and " - %s: %.1f%% vs %.1f%% (%s)" or " - %s: %s vs %s (%s)"
+    return string.format(formatStr, label, aDisp, bDisp, diff)
 end
 
--- Optional header for stat section
-function BuildCompare_GetStatDeltaHeader()
-    return "Stat         |      A vs      B | % Diff"
-end
-
--- Snapshot current active talents using the modern C_Traits API (Midnight+ / 12.0+).
--- Returns a table with loadoutName and a sorted list of selected talent names.
--- This lets us compare "same gear, different talents" runs.
+-- Snapshot current active talent loadout name + list of selected talent names (using C_Traits / C_ClassTalents).
+-- Per AGENTS.md: talents = { loadoutName = "...", selected = { "Talent Name", ... } }
 function BuildCompare_SnapshotTalents()
-    local result = {
-        loadoutName = "Unknown Loadout",
-        selected = {},
-    }
+    local result = { loadoutName = "Unknown", selected = {} }
 
-    if not C_Traits or not C_Traits.GetActiveConfigID then
+    local ok, specID = pcall(function()
+        return PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
+    end)
+    if not ok or not specID then
+        -- Fallback to old API
+        if GetSpecialization then
+            local specIndex = GetSpecialization()
+            if specIndex then
+                local _, specName = GetSpecializationInfo(specIndex)
+                result.loadoutName = specName or "Unknown Spec"
+            end
+        end
         return result
     end
 
-    local configID = C_Traits.GetActiveConfigID()
+    -- Best effort to get the active/saved config ID (loadout)
+    local configID = nil
+    if C_ClassTalents then
+        local selectionID = nil
+        if PlayerSpellsFrame and PlayerSpellsFrame.TalentsFrame and PlayerSpellsFrame.TalentsFrame.LoadoutDropDown and
+           PlayerSpellsFrame.TalentsFrame.LoadoutDropDown.GetSelectionID then
+            selectionID = PlayerSpellsFrame.TalentsFrame.LoadoutDropDown:GetSelectionID()
+        end
+        local lastSelected = C_ClassTalents.GetLastSelectedSavedConfigID and C_ClassTalents.GetLastSelectedSavedConfigID(specID)
+        configID = selectionID or lastSelected or (C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID())
+    end
+
+    if not configID and C_Traits and C_Traits.GetConfigIDBySystemID then
+        -- Fallback generic (rare for class talents)
+        configID = C_Traits.GetConfigIDBySystemID(1) -- rough
+    end
+
     if not configID then
+        result.loadoutName = "No Loadout"
         return result
     end
 
-    -- Get the loadout name if the player has named it
-    local configInfo = C_Traits.GetConfigInfo and C_Traits.GetConfigInfo(configID)
-    if configInfo and configInfo.name then
-        result.loadoutName = configInfo.name
+    local configInfo = C_Traits and C_Traits.GetConfigInfo and C_Traits.GetConfigInfo(configID)
+    if configInfo then
+        result.loadoutName = configInfo.name or "Default Loadout"
     end
 
-    -- Get the talent tree and selected nodes
-    local treeInfo = C_Traits.GetTreeInfo and C_Traits.GetTreeInfo(configID)
-    if not treeInfo or not treeInfo.nodes then
-        return result
-    end
-
-    for _, nodeID in ipairs(treeInfo.nodes) do
-        local nodeInfo = C_Traits.GetNodeInfo and C_Traits.GetNodeInfo(configID, nodeID)
-        if nodeInfo and nodeInfo.activeEntry and nodeInfo.activeEntry.entryID then
-            local entryInfo = C_Traits.GetEntryInfo and C_Traits.GetEntryInfo(configID, nodeInfo.activeEntry.entryID)
-            if entryInfo and entryInfo.definitionID then
-                local defInfo = C_Traits.GetDefinitionInfo and C_Traits.GetDefinitionInfo(entryInfo.definitionID)
-                if defInfo and defInfo.spellID then
-                    local spellName = GetSpellInfo(defInfo.spellID)
-                    if spellName then
-                        table.insert(result.selected, spellName)
-                    else
-                        table.insert(result.selected, "SpellID:" .. defInfo.spellID)
+    -- Collect selected talents by walking committed ranks (preferred over entryIDs)
+    local selected = {}
+    local seen = {}
+    if C_Traits and C_Traits.GetTreeNodes and C_Traits.GetNodeInfo and C_Traits.GetEntryInfo and C_Traits.GetDefinitionInfo then
+        local treeIDs = (configInfo and configInfo.treeIDs) or {}
+        for _, treeID in ipairs(treeIDs) do
+            local nodes = C_Traits.GetTreeNodes(treeID) or {}
+            for _, nodeID in ipairs(nodes) do
+                local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
+                if nodeInfo then
+                    local committed = nodeInfo.entryIDsWithCommittedRanks or nodeInfo.entryIDs or {}
+                    for _, entryID in ipairs(committed) do
+                        local entryInfo = C_Traits.GetEntryInfo(configID, entryID)
+                        if entryInfo and entryInfo.definitionID then
+                            local defInfo = C_Traits.GetDefinitionInfo(entryInfo.definitionID)
+                            if defInfo and defInfo.spellID then
+                                local spellName = GetSpellInfo and GetSpellInfo(defInfo.spellID) or tostring(defInfo.spellID)
+                                if spellName and not seen[spellName] then
+                                    seen[spellName] = true
+                                    table.insert(selected, spellName)
+                                end
+                            end
+                        end
                     end
                 end
             end
         end
     end
-
-    table.sort(result.selected)
+    table.sort(selected)
+    result.selected = selected
     return result
 end
+
+-- Compute talents only in A (not in B) and only in B (not in A). Returns two lists.
+function BuildCompare_TalentDiff(aTalents, bTalents)
+    local aSel = (aTalents and aTalents.selected) or {}
+    local bSel = (bTalents and bTalents.selected) or {}
+    local aSet, bSet = {}, {}
+    for _, n in ipairs(aSel) do aSet[n] = true end
+    for _, n in ipairs(bSel) do bSet[n] = true end
+    local onlyA, onlyB = {}, {}
+    for _, n in ipairs(aSel) do if not bSet[n] then table.insert(onlyA, n) end end
+    for _, n in ipairs(bSel) do if not aSet[n] then table.insert(onlyB, n) end end
+    return onlyA, onlyB
+end
+
+function BuildCompare_FormatTalentsDiff(aTalents, bTalents)
+    local onlyA, onlyB = BuildCompare_TalentDiff(aTalents, bTalents)
+    local aName = (aTalents and aTalents.loadoutName) or "A"
+    local bName = (bTalents and bTalents.loadoutName) or "B"
+    local lines = {}
+    if #onlyA > 0 then
+        table.insert(lines, string.format(" Talents only in %s: %s", aName, table.concat(onlyA, ", ")))
+    else
+        table.insert(lines, string.format(" No talents unique to %s", aName))
+    end
+    if #onlyB > 0 then
+        table.insert(lines, string.format(" Talents only in %s: %s", bName, table.concat(onlyB, ", ")))
+    else
+        table.insert(lines, string.format(" No talents unique to %s", bName))
+    end
+    if #onlyA == 0 and #onlyB == 0 then
+        return " Talents identical between runs."
+    end
+    return table.concat(lines, "\n")
+end
+
 

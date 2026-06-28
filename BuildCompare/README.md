@@ -14,7 +14,7 @@ Compare different talent/stat builds (mastery-heavy vs crit-heavy etc.) using da
   3. Run Skyreach M+10 again → `/bc record "crit heavy v1"`
   4. Open the UI (`/bc`) → instantly see raw DT / healing + the % delta between the two builds.
 
-Supports filtering mentally by instance/key level (data is stored with full metadata). Future: dropdown filters, CSV export, more metrics (absorbs, cooldown usage, etc.).
+Supports filtering mentally by instance/key level (data is stored with full metadata). Future: dropdown filters, CSV export.
 
 ## Install
 
@@ -33,23 +33,26 @@ Supports filtering mentally by instance/key level (data is stored with full meta
 ## Usage
 
 - `/bc` — open/close the main window (movable).
+- `/bc mini` — show the compact live current-run overlay (movable, place over default WoW damage meters for fast glance + clicks during a run).
 - `/bc record "my mastery build"` — snapshot current instance + stats + meter data and store it.
 - `/bc clear` — wipe all saved runs (careful).
 - In the UI:
-  - "Record Current Run" button (prompts for label).
-  - "Refresh" to reload the list from DB.
-  - "Clear DB".
+  - Sel buttons pick up to 2 runs; right side now shows true 3 columns (Run A values | Run B values | Diff %). On any line the column with the numerically higher value is colored green.
+  - All numbers in compare use consistent abbreviated formatting (k / m).
+  - Top-right "-" button (now snug next to the X, same size) minimizes to the live overlay. The mini shows a "Time: Xm Ys" timer for the current recording duration + DT/AvDT/Heal/DefCDs (no more Rec button; use /bc record or main for saving).
+  - Bottom: Start/Stop Custom for manual, Close, Clear DB.
   - Bars visualize relative DT.
-  - Bottom text shows quick % diff between your two most recent recorded runs (lower DT = generally better survivability for a tank).
 
 ## Data Model (what gets stored)
 
 Each run record contains:
-- timestamp, instance name, difficulty, keystone level
+- timestamp, instance name, difficulty, keystone level (or delve info)
 - buildLabel (your free text)
 - spec + class
 - stats snapshot (mastery/crit/haste/vers ratings + %)
-- dt, dtps, healing, hps, duration (pulled from C_DamageMeter session)
+- talents snapshot (loadoutName + list of selected talent names via C_Traits)
+- dt, dtps, avoidableDT, avoidableDTPS, healing, hps, damage, dps, duration, interrupts, dispels, deaths (pulled direct from C_DamageMeter session where available)
+- defensiveCDsUsed (tracked during run via UNIT_SPELLCAST_SUCCEEDED — only defensives kept after streamlining)
 - reference to the meter session ID (if available)
 
 The DB lives in:
@@ -65,14 +68,16 @@ Blizzard removed direct `COMBAT_LOG_EVENT_UNFILTERED` (CLEU) access for addons i
 **All damage/healing data must come from the new `C_DamageMeter` namespace**:
 - `C_DamageMeter.IsDamageMeterAvailable()`
 - `C_DamageMeter.GetAvailableCombatSessions()`
-- `C_DamageMeter.GetCombatSessionFromType("Overall")` / `"DamageTaken"` etc.
-- `C_DamageMeter.GetCombatSessionFromID(id)`
+- `C_DamageMeter.GetCombatSessionFromType(Enum.DamageMeterSessionType.Overall, Enum.DamageMeterType.DamageTaken)` (and other types like HealingDone=2, AvoidableDamageTaken=8, DamageDone=0, Deaths=9, etc.)
+- `C_DamageMeter.GetCombatSessionFromID(id, type)`
 
 This addon is written to use exactly that. The built-in damage meter in the default UI is now the canonical source.
 
 If the API fields are slightly different on your build, run in-game:
-`/dump C_DamageMeter.GetCombatSessionFromType("Overall")`
-and adjust `GetPlayerMeterSummary` / `BuildCompare_GetMeterSessionSummary` in Core.lua / Utils.lua accordingly. The comments in the code tell you exactly where to look.
+`/dump C_DamageMeter.IsDamageMeterAvailable()`
+`/dump C_DamageMeter.GetAvailableCombatSessions()`
+`/dump C_DamageMeter.GetCombatSessionFromType(Enum.DamageMeterSessionType.Overall, Enum.DamageMeterType.DamageTaken)`
+and inspect the returned structure (combatSources, find isLocalPlayer). GetPlayerMeterSummary / GetNativeMeterData in Core.lua are now purely native C_DamageMeter (streamlined, no external addon dependency at all).
 
 ## Development / Iterating with Grok
 
@@ -83,13 +88,13 @@ If you want to keep improving this with AI assistance later:
 ## Features Implemented (this update)
 
 - **Dropdown-style filters** (Instance / Key Level / Build label) — click the buttons in the UI to cycle through available values + "All". List updates live.
-- **Better run comparison table** — "Sel" buttons on run rows let you pick runs. Bottom panel shows detailed side-by-side comparison (DT, DTPS, Healing, Absorbs, CD count, damage type breakdown) **plus Build Stats deltas** (Mastery/Crit/Haste/Vers ratings and % with raw deltas and % change columns) so you can directly see how stat allocation affected your tanking performance.
-- **Auto record on M+ completion / boss kill** — Automatically tracks on CHALLENGE_MODE_START / ENCOUNTER_START and records on completion (no manual /bc record needed for standard content).
+- **Better run comparison table** — "Sel" buttons on run rows let you pick runs. Bottom panel shows detailed side-by-side comparison (DT + AvoidableDT, DTPS, Healing, Def CDs, aggregate Damage/Healing, interrupts/dispels/deaths) **plus Build Stats deltas** (Mastery/Crit/Haste/Vers ratings and % with raw deltas and % change columns) and talent differences so you can directly see how stat allocation + talent choices affected your tanking performance.
+- **Auto record on M+ completion / boss kill / delve** — Automatically tracks on CHALLENGE_MODE_START / ENCOUNTER_START and records on completion. Delves are now supported as trackable content (the whole delve instance is one run; individual mob packs no longer create spammy solo records).
+- **Pure native meter support (no external addons)**: All combat metrics (DT + AvoidableDT/DTPS, healing/HPS, damage/DPS, interrupts, dispels, deaths) come directly from the built-in `C_DamageMeter` API (12.0+ Midnight) via the exposed Enum.DamageMeterType values. For content where the meter has no session data, the record still captures build stats, talents, defensive CDs used (via allowed UNIT_SPELLCAST events), instance info, etc. Streamlined: removed Absorbs (frequently duplicative or not isolated per-pull), removed broad DPS/Healing CD cast tracking (only tank-relevant defensives kept for focus and code size), dropped overhealing.
 - **More metrics**:
-  - Absorbs captured from the built-in meter.
-  - Damage type breakdown (physical / magic at minimum; inspect C_DamageMeter for more).
-  - Defensive cooldown tracking (Barkskin, Survival Instincts, Shield Wall, Icebound Fortitude, Anti-Magic Shell, Blessing of Protection, etc.). Logged via cast events during the run and shown in comparisons.
-  - **Talent tracking**: When a run starts (M+ / boss pull or manual record), we snapshot your active talent loadout name + the list of selected talents using the modern `C_Traits` API. In the comparison view you can now see exactly which talents were different between two runs (even with identical gear/stats), so you can measure the impact of specific talent choices on your DT/healing.
+  - Avoidable Damage Taken (direct from C_DamageMeter type 8) — critical for evaluating how much DT was actually avoidable/mitigable by the build.
+  - Defensive cooldown tracking (Barkskin, Survival Instincts, Shield Wall, Icebound Fortitude, Anti-Magic Shell, Blessing of Protection, etc.). Logged via cast events during the run and shown in comparisons (only defensives; other CD categories removed to streamline).
+  - **Talent tracking**: When a run starts (M+ / boss pull or manual record), we snapshot your active talent loadout name + the list of selected talents using the modern `C_Traits` / `C_ClassTalents` API. In the comparison view you now see exactly which talents were unique to each run (A-only vs B-only).
 
 Old saved runs remain fully compatible.
 
