@@ -39,6 +39,19 @@ These rules apply whenever Grok (or any agent) works on this addon or the Lua fi
 - Update both the in-folder README.md and this AGENTS.md when rules or architecture change.
 - Prefer small, reviewable changes. One logical unit per edit pass (e.g. "add stat snapshot helper" not "rewrite the whole UI and DB").
 
+## Composer Visibility Protocol
+
+See the parent `../AGENTS.md` (repo root) for the full persistent **Composer Visibility Protocol**. It is inherited here and **must** be followed for every delegation to Composer 2.5:
+- Mandatory "COMPOSER THINKING LOG: Step N: ..." plain block at the absolute start of every subagent response.
+- Append each LOG (and key actions) to a per-issue log (e.g. `../composer_logs/issueX_log.txt`) using `Add-Content ... -Value '...' ` with **single quotes** around the value for PS safety.
+- Coordinator: start monitor (simple findstr recommended), poll subagent + tail/Select-String the log, paste LOGs + status to user.
+- User primary view: run in separate PS: `Get-Content -Path '...\issueX_log.txt' -Wait -Tail 5`
+- Phase-based LOGs (setup, post-invest, pre/post edit, READY) — avoid per-tool micro steps to prevent loops/overhead.
+- Always include full protocol + pre-investigation in delegation prompts. Subagent must end with exact "READY FOR REVIEW" + bullets. Coordinator does post-READY review (reads + log + git), mandatory live sync (robocopy/Copy-Item to WoW AddOns path), todo update, then next.
+- One bug/feature at a time. Coordinator never self-edits target code.
+
+This ensures full visibility for long tasks like the 4 bug fixes (overlapping columns, abbr numbers, %Diff secrets, dummy DT pollution).
+
 ## Future-Proofing Notes
 - Watch warcraft.wiki.gg for C_DamageMeter and combat API updates after every major patch.
 - If Blizzard ever expands the built-in meter with more tank-specific categories (more granular mitigation, damage schools on sources, etc.), prefer consuming those over custom calculations.
@@ -66,6 +79,8 @@ This rule is loaded automatically via project instructions for every Grok sessio
 - The goal of this rule is reliable long-running development sessions for the BuildCompare addon without surprise context loss.
 
 Follow these rules on every interaction with the addon source.
+
+**Note: The full Coordinator Agent Role instructions (including the requirement to start every response with <thought> tags answering the 4 questions, the Absolute Rule to never write/edit code yourself, and the Delegation Protocol) are defined in the parent `../AGENTS.md` at the repo root. Those instructions take precedence for all work in this directory tree and must be followed in every session.**
 
 ## Coordinator Agent Role (Persistent across all sessions for this worktree)
 

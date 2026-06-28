@@ -81,7 +81,7 @@ end
 
 -- Format percentage difference (neutral, e.g. stats)
 function BuildCompare_FormatPercentDiffNeutral(a, b)
-    if IsSecret(a) or IsSecret(b) then return "0.0%" end
+    if IsSecret(a) or IsSecret(b) then return "N/A" end
     a = tonumber(a) or 0
     b = tonumber(b) or 0
     if a == 0 and b == 0 then return "0.0%" end

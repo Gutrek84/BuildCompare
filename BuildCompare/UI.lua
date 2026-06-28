@@ -45,9 +45,13 @@ local function IsSecret(val)
 end
 
 -- Used for SetFormattedText in secure UI widgets (keeps secret value intact so the engine can render it)
+-- Enhanced for issue #2 (tracking list + mini only): for non-secrets returns clean k/m abbr (via BuildCompare_FormatNumber with .1 precision); for IsSecret returns the raw val unchanged so SetFormattedText lets the engine render abbreviated (1.5m, 40.5k etc). This ensures DT/AvDT/Dmg/Heal (and rates) always abbreviated in saved-runs list rows and mini overlay even when values from C_DamageMeter/GetNativeMeterData are secret protected. Uses local IsSecret (taint-safe). SafeFormatVal/ToSafeString unchanged (for other paths).
 local function SafeDisplayVal(val)
     if not val then return "0" end
-    return val
+    if IsSecret(val) then
+        return val  -- pass secret through for engine to abbreviate in SetFormattedText/SetText
+    end
+    return BuildCompare_FormatNumber(val)
 end
 
 -- Used for standard string formatting and concatenation in tainted Lua (prevents crashes)
@@ -412,7 +416,7 @@ function BuildCompare_CreateMainFrame()
     -- List container
     local listFrame = CreateFrame("Frame", nil, frame, "InsetFrameTemplate")
     listFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -100)  -- shifted down for new selectors
-    listFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", 365, 50)  -- give a bit more room to the compare panel on the right so long text doesn't overflow the frame edge
+    listFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", 310, 50)  -- give more room to the compare panel on the right for wider columns (shifted left for 3-col breathing room)
 
     scroll = CreateFrame("ScrollFrame", nil, listFrame, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 4, -4)
@@ -460,7 +464,7 @@ function BuildCompare_CreateMainFrame()
 
     -- Comparison panel container
     frame.comparePanel = CreateFrame("Frame", nil, frame, "InsetFrameTemplate")
-    frame.comparePanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 380, -42)
+    frame.comparePanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 325, -42)
     frame.comparePanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 15)
 
     -- ScrollFrame for comparison details
@@ -469,7 +473,7 @@ function BuildCompare_CreateMainFrame()
     compareScroll:SetPoint("BOTTOMRIGHT", -28, 4)
 
     local compareContent = CreateFrame("Frame", nil, compareScroll)
-    compareContent:SetSize(395, 1)
+    compareContent:SetSize(480, 1)
     compareScroll:SetScrollChild(compareContent)
     frame.compareContentFrame = compareContent
 
@@ -491,15 +495,15 @@ end
 
 -- ============================================================
 -- Aligned 3-column comparison row builder (for perfect vertical alignment)
--- Columns: [narrow metric label] | [Run A value] | [Run B value] | [% Diff]
+-- Columns: [narrow metric label] | [Run A value] | [Run B value] | [% Diff]  (widths + content tuned below for breathing room on long rates/headers + 3 dividers + offsets)
 -- Vertical divider lines between columns.
 -- aIsGreen / bIsGreen: embed green color on the higher side's value.
 -- Header rows use isHeader=true and put run labels in the A/B slots.
 -- ============================================================
-local LABEL_W = 55
-local A_W = 118
-local B_W = 118
-local DIFF_W = 82
+local LABEL_W = 52
+local A_W = 160
+local B_W = 160
+local DIFF_W = 70
 
 local function CreateAlignedCompareRow(parent, y, isHeader, metric, aVal, bVal, diffVal, aIsGreen, bIsGreen)
     local rowH = isHeader and 17 or 14
@@ -641,9 +645,10 @@ function BuildCompare_RefreshUI()
         local run = runs[i]
         local row = CreateBarRow(content, #frame.rows + 1, run)
 
-        -- Enhanced status bar text layout using SetFormattedText for taint safety
+        -- Enhanced status bar text layout using SetFormattedText for taint safety (issue #2 fix)
+        -- Use SafeDisplayVal(...) + SetFormattedText so that for secret protected numbers (from C_DamageMeter in runs or live) the engine does the k/m abbr, and for normal values we get the .1f k/m from inside SafeDisplayVal/FormatNumber. DT, AvDT, Dmg, Heal now always clean abbreviated in the main saved-runs list rows.
         -- Include Dmg for custom/dummy tests where DT may be 0 but outgoing damage is the key metric
-        row.text:SetFormattedText("DT: %s | AvDT: %s | Dmg: %s | Heal: %s", BuildCompare_FormatNumber(run.dt), BuildCompare_FormatNumber(run.avoidableDT or 0), BuildCompare_FormatNumber(run.damage or 0), BuildCompare_FormatNumber(run.healing))
+        row.text:SetFormattedText("DT: %s | AvDT: %s | Dmg: %s | Heal: %s", SafeDisplayVal(run.dt), SafeDisplayVal(run.avoidableDT or 0), SafeDisplayVal(run.damage or 0), SafeDisplayVal(run.healing or 0))
 
         -- Bar scale relative to filtered list max DT
         local maxDT = 1
@@ -653,8 +658,14 @@ function BuildCompare_RefreshUI()
                 maxDT = val
             end
         end
-        row.dtBar:SetMinMaxValues(0, maxDT)
-        row.dtBar:SetValue(run.dt or 0)
+        local val = run.dt or 0
+        if IsSecret(val) then
+            row.dtBar:SetMinMaxValues(0, 1)
+            row.dtBar:SetValue(0)
+        else
+            row.dtBar:SetMinMaxValues(0, maxDT)
+            row.dtBar:SetValue(val)
+        end
 
         -- Pre-select state
         if selectedForCompare[run.id] then
@@ -693,9 +704,9 @@ function BuildCompare_RefreshUI()
         local b = selectedList[2] or a
         local labelA = BuildCompare_GetRunLabel(a) or "A"
         local labelB = BuildCompare_GetRunLabel(b) or "B"
-        -- Truncate long labels for the header row
-        if #labelA > 28 then labelA = labelA:sub(1,25) .. "..." end
-        if #labelB > 28 then labelB = labelB:sub(1,25) .. "..." end
+        -- Truncate long labels for the header row (more aggressive truncation so full "A: " + name fits safely inside the (now wider) A_W/B_W columns)
+        if #labelA > 20 then labelA = labelA:sub(1,18) .. "..." end
+        if #labelB > 20 then labelB = labelB:sub(1,18) .. "..." end
 
         local content = frame.compareContentFrame
         local y = 2
@@ -715,7 +726,7 @@ function BuildCompare_RefreshUI()
         end
 
         -- Header row with the actual run labels (so user sees which is A vs B)
-        local hr, hh = CreateAlignedCompareRow(content, y, true, "Metric", "Run A: " .. labelA, "Run B: " .. labelB, "% Diff", false, false)
+        local hr, hh = CreateAlignedCompareRow(content, y, true, "Metric", "A: " .. labelA, "B: " .. labelB, "% Diff", false, false)
         table.insert(rows, hr)
         y = y + hh + 2
 
@@ -726,24 +737,49 @@ function BuildCompare_RefreshUI()
 
         -- DT (lower better for tank, but higher number still greens per user request)
         local na, nb = a.dt or 0, b.dt or 0
-        local ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.dtps or 0) .. "/s)"
-        local tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.dtps or 0) .. "/s)"
+        local ta, tb
+        if IsSecret(na) then
+            ta = BuildCompare_FormatNumber(na)
+        else
+            ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.dtps or 0) .. "/s)"
+        end
+        if IsSecret(nb) then
+            tb = BuildCompare_FormatNumber(nb)
+        else
+            tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.dtps or 0) .. "/s)"
+        end
         local ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         local gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("DT", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb)
 
         -- AvDT (avoidable)
         na, nb = a.avoidableDT or 0, b.avoidableDT or 0
-        ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.avoidableDTPS or 0) .. "/s)"
-        tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.avoidableDTPS or 0) .. "/s)"
+        if IsSecret(na) then
+            ta = BuildCompare_FormatNumber(na)
+        else
+            ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.avoidableDTPS or 0) .. "/s)"
+        end
+        if IsSecret(nb) then
+            tb = BuildCompare_FormatNumber(nb)
+        else
+            tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.avoidableDTPS or 0) .. "/s)"
+        end
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("AvDT", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb)
 
         -- Healing (higher good)
         na, nb = a.healing or 0, b.healing or 0
-        ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.hps or 0) .. "/s)"
-        tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.hps or 0) .. "/s)"
+        if IsSecret(na) then
+            ta = BuildCompare_FormatNumber(na)
+        else
+            ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.hps or 0) .. "/s)"
+        end
+        if IsSecret(nb) then
+            tb = BuildCompare_FormatNumber(nb)
+        else
+            tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.hps or 0) .. "/s)"
+        end
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Heal", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb)
@@ -759,8 +795,16 @@ function BuildCompare_RefreshUI()
         addSection("|cFFFFD100Damage Done & DPS:|r")
 
         na, nb = a.damage or 0, b.damage or 0
-        ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.dps or 0) .. "/s)"
-        tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.dps or 0) .. "/s)"
+        if IsSecret(na) then
+            ta = BuildCompare_FormatNumber(na)
+        else
+            ta = BuildCompare_FormatNumber(na) .. " (" .. BuildCompare_FormatNumber(a.dps or 0) .. "/s)"
+        end
+        if IsSecret(nb) then
+            tb = BuildCompare_FormatNumber(nb)
+        else
+            tb = BuildCompare_FormatNumber(nb) .. " (" .. BuildCompare_FormatNumber(b.dps or 0) .. "/s)"
+        end
         ga = not IsSecret(na) and not IsSecret(nb) and na > nb
         gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Dmg", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb)
@@ -771,14 +815,16 @@ function BuildCompare_RefreshUI()
         na, nb = a.interrupts or 0, b.interrupts or 0
         ta = BuildCompare_FormatNumber(na)
         tb = BuildCompare_FormatNumber(nb)
-        ga = na > nb; gb = nb > na
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Interrupts", na, nb, ta, tb, BuildCompare_FormatPercentDiffHigherBetter(na, nb), ga, gb)
 
         -- Deaths (lower usually better, neutral diff)
         na, nb = a.deaths or 0, b.deaths or 0
         ta = BuildCompare_FormatNumber(na)
         tb = BuildCompare_FormatNumber(nb)
-        ga = na > nb; gb = nb > na
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Deaths", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb)
 
         -- === Stats at the bottom, same 3-col aligned format (no "vs" crammed) ===
@@ -791,35 +837,45 @@ function BuildCompare_RefreshUI()
         na, nb = saStats.mastery or 0, sbStats.mastery or 0
         ta = BuildCompare_FormatNumber(na)
         tb = BuildCompare_FormatNumber(nb)
-        ga = na > nb; gb = nb > na
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Mastery", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb)
 
         -- Crit
         na, nb = saStats.crit or 0, sbStats.crit or 0
         ta = BuildCompare_FormatNumber(na)
         tb = BuildCompare_FormatNumber(nb)
-        ga = na > nb; gb = nb > na
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Crit", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb)
 
         -- Haste
         na, nb = saStats.haste or 0, sbStats.haste or 0
         ta = BuildCompare_FormatNumber(na)
         tb = BuildCompare_FormatNumber(nb)
-        ga = na > nb; gb = nb > na
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Haste", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb)
 
         -- Vers
         na, nb = saStats.vers or 0, sbStats.vers or 0
         ta = BuildCompare_FormatNumber(na)
         tb = BuildCompare_FormatNumber(nb)
-        ga = na > nb; gb = nb > na
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Vers", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb)
 
         -- Optional % versions (compact, user can see straight across)
         na, nb = saStats.masteryPct or 0, sbStats.masteryPct or 0
-        ta = string.format("%.1f%%", na)
-        tb = string.format("%.1f%%", nb)
-        ga = na > nb; gb = nb > na
+        if IsSecret(na) or IsSecret(nb) then
+            ta = "Pending"
+            tb = "Pending"
+        else
+            ta = string.format("%.1f%%", na)
+            tb = string.format("%.1f%%", nb)
+        end
+        ga = not IsSecret(na) and not IsSecret(nb) and na > nb
+        gb = not IsSecret(na) and not IsSecret(nb) and nb > na
         addRow("Mast %", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb)
 
         -- Resize content for the rows we created + a little padding for scroll
@@ -883,15 +939,15 @@ function BuildCompare_UpdateMiniDisplay(mf)
         return
     end
 
-    -- Use SetFormattedText + FormatNumber so secret values (common in live Current combat) are passed to the engine
-    -- for safe abbreviated rendering (k/m with decimals) instead of raw full integers. Matches main list rows.
-    mf.dtLine:SetFormattedText("DT: %s (%s/s)", BuildCompare_FormatNumber(data.dt or 0), BuildCompare_FormatNumber(data.dtps or 0))
+    -- Use SetFormattedText + SafeDisplayVal for secret-safe k/m decimals in combat (issue #2 fix).
+    -- SafeDisplayVal returns raw secret val (for engine abbr via SetFormattedText) or the clean .1f k/m string. Replaces prior direct FormatNumber. Ensures DT, AvDT, Dmg, Heal + rates always abbreviated (1.5m, 40.5k) in mini current-run overlay even for secret protected numbers from GetNativeMeterData. Matches updated list rows.
+    mf.dtLine:SetFormattedText("DT: %s (%s/s)", SafeDisplayVal(data.dt or 0), SafeDisplayVal(data.dtps or 0))
 
-    mf.avdtLine:SetFormattedText("AvDT: %s (%s/s)", BuildCompare_FormatNumber(data.avoidableDT or 0), BuildCompare_FormatNumber(data.avoidableDTPS or 0))
+    mf.avdtLine:SetFormattedText("AvDT: %s (%s/s)", SafeDisplayVal(data.avoidableDT or 0), SafeDisplayVal(data.avoidableDTPS or 0))
 
-    mf.healLine:SetFormattedText("Heal: %s (%s/s)", BuildCompare_FormatNumber(data.healing or 0), BuildCompare_FormatNumber(data.hps or 0))
+    mf.healLine:SetFormattedText("Heal: %s (%s/s)", SafeDisplayVal(data.healing or 0), SafeDisplayVal(data.hps or 0))
 
-    mf.dmgLine:SetFormattedText("Dmg: %s (%s/s)", BuildCompare_FormatNumber(data.damage or 0), BuildCompare_FormatNumber(data.dps or 0))
+    mf.dmgLine:SetFormattedText("Dmg: %s (%s/s)", SafeDisplayVal(data.damage or 0), SafeDisplayVal(data.dps or 0))
 
     -- Live defensive CD count (only tracked if an activeRun/custom/M+ is in progress via events)
     local cdsCount = 0
