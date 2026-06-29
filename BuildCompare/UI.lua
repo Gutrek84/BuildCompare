@@ -49,6 +49,7 @@ local currentMode = "mythic"  -- "mythic", "raid", "custom"
 local currentDungeon = nil
 local currentRaid = nil
 local currentBoss = nil
+local currentCustomLabel = nil
 
 local issecretvalue = issecretvalue or function() return false end
 local function IsSecret(val)
@@ -176,11 +177,19 @@ local function CreateBarRow(parent, index, run)
 end
 
 -- Helper for simple dropdown menus (no external libs, streamlined)
+local activeMenu = nil
+local clickTrap = nil
+
 local function ShowSimpleDropdown(anchor, options, onSelect)
     if not anchor or not options or #options == 0 then return end
     if type(onSelect) ~= "function" then
         onSelect = function() end
     end
+
+    if activeMenu then
+        activeMenu:Hide()
+    end
+
     local menu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     menu:SetBackdrop({
         bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -190,22 +199,90 @@ local function ShowSimpleDropdown(anchor, options, onSelect)
     })
     menu:SetBackdropColor(0, 0, 0, 0.95)
     menu:SetFrameStrata("DIALOG")
-    menu:SetSize(240, 8 + #options * 22)
+    menu:SetFrameLevel(100)
+
+    activeMenu = menu
+
+    -- Click outside to dismiss trap
+    if not clickTrap then
+        clickTrap = CreateFrame("Button", nil, UIParent)
+        clickTrap:SetAllPoints(UIParent)
+        clickTrap:SetFrameStrata("DIALOG")
+        clickTrap:SetNormalTexture("")
+        clickTrap:SetPushedTexture("")
+        clickTrap:SetHighlightTexture("")
+    end
+    clickTrap:SetFrameLevel(99)
+    clickTrap:SetScript("OnClick", function()
+        menu:Hide()
+    end)
+    clickTrap:Show()
+
+    menu:SetScript("OnHide", function()
+        clickTrap:Hide()
+        if activeMenu == menu then
+            activeMenu = nil
+        end
+    end)
+
+    local maxVisible = 10
+    local useScroll = #options > maxVisible
+    local visibleCount = useScroll and maxVisible or #options
+    local itemHeight = 20
+    local itemSpacing = 2
+    local itemRowHeight = itemHeight + itemSpacing -- 22
+
+    local menuWidth = useScroll and 260 or 240
+    menu:SetSize(menuWidth, 8 + visibleCount * itemRowHeight)
     menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
 
+    local container
+    if useScroll then
+        local scrollFrame = CreateFrame("ScrollFrame", "BuildCompareDropdownScroll", menu, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", menu, "TOPLEFT", 4, -4)
+        scrollFrame:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -24, 4)
+        MakeScrollFrameTaintSafe(scrollFrame)
+
+        local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+        scrollChild:SetSize(menuWidth - 28, #options * itemRowHeight)
+        scrollFrame:SetScrollChild(scrollChild)
+
+        scrollFrame:EnableMouseWheel(true)
+        scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+            local scrollbar = self.ScrollBar or _G[self:GetName() .. "ScrollBar"]
+            if scrollbar and scrollbar:IsEnabled() then
+                local minVal, maxVal = scrollbar:GetMinMaxValues()
+                local cur = scrollbar:GetValue()
+                local step = itemRowHeight * 2
+                local newVal = cur - delta * step
+                if newVal < minVal then newVal = minVal end
+                if newVal > maxVal then newVal = maxVal end
+                scrollbar:SetValue(newVal)
+            end
+        end)
+
+        container = scrollChild
+    else
+        container = menu
+    end
+
     local y = -4
+    local btnWidth = useScroll and 220 or 230
+    local btnX = useScroll and 4 or 5
+
     for _, opt in ipairs(options) do
-        local btn = CreateFrame("Button", nil, menu)
-        btn:SetSize(230, 20)
-        btn:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, y)
+        local btn = CreateFrame("Button", nil, container)
+        btn:SetSize(btnWidth, itemHeight)
+        btn:SetPoint("TOPLEFT", container, "TOPLEFT", btnX, y)
         btn:SetNormalFontObject("GameFontHighlightSmall")
         btn:SetText(opt)
         btn:SetScript("OnClick", function()
             onSelect(opt)
             menu:Hide()
         end)
-        y = y - 22
+        y = y - itemRowHeight
     end
+
     menu:Show()
 end
 
@@ -214,10 +291,12 @@ local function SetMode(mode)
     currentDungeon = nil
     currentRaid = nil
     currentBoss = nil
+    currentCustomLabel = nil
 
     if frame.mythicDungeonBtn then frame.mythicDungeonBtn:Hide() end
     if frame.raidSelector then frame.raidSelector:Hide() end
     if frame.bossSelector then frame.bossSelector:Hide() end
+    if frame.customSelector then frame.customSelector:Hide() end
 
     if mode == "mythic" then
         if frame.mythicDungeonBtn then
@@ -228,6 +307,11 @@ local function SetMode(mode)
         if frame.raidSelector then
             frame.raidSelector:Show()
             frame.raidSelector:SetText("Raid: All")
+        end
+    elseif mode == "custom" then
+        if frame.customSelector then
+            frame.customSelector:Show()
+            frame.customSelector:SetText("Build: All")
         end
     end
 
@@ -294,11 +378,37 @@ local function ShowBossDropdown()
     end)
 end
 
+local function ShowCustomDropdown()
+    local options = {"All"}
+    local allRuns = (BuildCompareDB and BuildCompareDB.runs) or {}
+    local seen = {}
+    for _, r in ipairs(allRuns) do
+        local rt = r.runType or (r.keyLevel and r.keyLevel > 0 and "mythic") or (r.bossName and "raid") or "custom"
+        if rt == "custom" and r.buildLabel and r.buildLabel ~= "" then
+            if not seen[r.buildLabel] then
+                seen[r.buildLabel] = true
+                table.insert(options, r.buildLabel)
+            end
+        end
+    end
+    ShowSimpleDropdown(frame.customSelector, options, function(choice)
+        if choice == "All" then
+            currentCustomLabel = nil
+            if frame and frame.customSelector then frame.customSelector:SetText("Build: All") end
+        else
+            currentCustomLabel = choice
+            if frame and frame.customSelector then frame.customSelector:SetText("Build: " .. choice) end
+        end
+        if _G.BuildCompare_RefreshUI then _G.BuildCompare_RefreshUI() end
+    end)
+end
+
 -- Expose for button scripts to ensure they can find the functions even if scoping is tricky
 BuildCompare_SetMode = SetMode
 BuildCompare_ShowMythicDropdown = ShowMythicDropdown
 BuildCompare_ShowRaidDropdown = ShowRaidDropdown
 BuildCompare_ShowBossDropdown = ShowBossDropdown
+BuildCompare_ShowCustomDropdown = ShowCustomDropdown
 
 function BuildCompare_CreateMainFrame()
     if frame then return frame end
@@ -487,6 +597,14 @@ function BuildCompare_CreateMainFrame()
     frame.bossSelector:SetNormalFontObject("GameFontNormalSmall")
     frame.bossSelector:Hide()
     frame.bossSelector:SetScript("OnClick", function() BuildCompare_ShowBossDropdown() end)
+
+    frame.customSelector = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.customSelector:SetSize(170, 20)
+    frame.customSelector:SetPoint("TOPLEFT", frame.modeBar, "BOTTOMLEFT", 0, -2)
+    frame.customSelector:SetText("Build: All")
+    frame.customSelector:SetNormalFontObject("GameFontNormalSmall")
+    frame.customSelector:Hide()
+    frame.customSelector:SetScript("OnClick", function() BuildCompare_ShowCustomDropdown() end)
 
     -- List container
     local listFrame = CreateFrame("Frame", nil, frame, "InsetFrameTemplate")
@@ -690,7 +808,9 @@ local function GetViewRuns()
                 end
             end
         elseif currentMode == "custom" and rt == "custom" then
-            match = true
+            if not currentCustomLabel or (r.buildLabel == currentCustomLabel) then
+                match = true
+            end
         end
         if match then
             table.insert(filtered, r)
