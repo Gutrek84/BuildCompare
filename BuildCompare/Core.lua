@@ -156,7 +156,7 @@ local function GetLatestSessionID()
     if C_DamageMeter and C_DamageMeter.GetAvailableCombatSessions then
         local sessions = C_DamageMeter.GetAvailableCombatSessions()
         if sessions and #sessions > 0 then
-            return sessions[#sessions].sessionID
+            return SafeUnbox( sessions[#sessions].sessionID )
         end
     end
     return nil
@@ -177,6 +177,45 @@ local function GetRate(rate, total, duration)
         return rate
     end
     return SafeDiv(total, duration)
+end
+
+-- Taint-safe unbox/equal/key wrappers. Use everywhere a meter session/dur or aura numeric ID is used for decision, compare, or key.
+local function SafeUnbox(val)
+    if not val then return 0 end
+    if IsSecret(val) then
+        return BuildCompare_UnboxSecret(val)
+    end
+    return val
+end
+
+local function SafeSessionIDsEqual(a, b)
+    if a == nil and b == nil then return true end
+    if not a or not b then return false end
+    -- Never let secret participate in native == for IDs (even if one side plain). Use string identity (safe, no taint, IDs are unique).
+    if IsSecret(a) or IsSecret(b) then
+        return tostring(a) == tostring(b)
+    end
+    return a == b
+end
+
+local function SafeSetAuraKey(tbl, rawKey, value)
+    -- Eliminate any possibility of secret (or even plain large num auraID) as table key. Always string key for activeAuras / similar.
+    if not tbl then return end
+    local k = tostring(rawKey or "")
+    if k == "" then return end
+    tbl[k] = value
+end
+
+local function SafeGetAuraKey(tbl, rawKey)
+    if not tbl then return nil end
+    local k = tostring(rawKey or "")
+    return tbl[k]
+end
+
+local function SafeAuraKeyDelete(tbl, rawKey)
+    if not tbl then return end
+    local k = tostring(rawKey or "")
+    tbl[k] = nil
 end
 
 -- Slash command
@@ -358,42 +397,44 @@ end
 local function SnapshotPlayerStats()
     local stats = {}
     
+    -- Use SafeUnbox for all numeric stats that can be secret (from GetCombatRating etc in 12.0+). Prevents secret number compare taint/errors inside Snapshot and when stats used later in recording/UI diffs.
     local ok, value = pcall(GetCombatRating, CR_MASTERY)
-    stats.mastery = ok and value or 0
+    stats.mastery = SafeUnbox( ok and value or 0 )
     
     ok, value = pcall(GetCombatRating, CR_CRIT_MELEE)
-    stats.crit = ok and value or 0
+    stats.crit = SafeUnbox( ok and value or 0 )
     
     ok, value = pcall(GetCombatRating, CR_HASTE_MELEE)
-    stats.haste = ok and value or 0
+    stats.haste = SafeUnbox( ok and value or 0 )
     
     ok, value = pcall(GetCombatRating, CR_VERSATILITY_DAMAGE_DONE)
-    stats.vers = ok and value or 0
+    stats.vers = SafeUnbox( ok and value or 0 )
 
-    stats.masteryPct = GetMastery() or 0
+    stats.masteryPct = SafeUnbox( GetMastery() or 0 )
     
     -- School 1 to 7 spell crit check combined with standard crit chance
-    local maxCrit = GetCritChance() or 0
+    local maxCrit = SafeUnbox( tonumber(GetCritChance()) or 0 )
     for school = 1, 7 do
-        local critChance = GetSpellCritChance(school)
-        if critChance and critChance > maxCrit then
+        local critChance = SafeUnbox( tonumber(GetSpellCritChance(school)) or 0 )
+        if critChance > maxCrit then
             maxCrit = critChance
         end
     end
     stats.critPct = maxCrit
     
-    stats.hastePct = GetHaste() or 0
+    stats.hastePct = SafeUnbox( GetHaste() or 0 )
     
     ok, value = pcall(GetCombatRatingBonus, CR_VERSATILITY_DAMAGE_DONE)
-    stats.versPct = ok and value or 0
+    stats.versPct = SafeUnbox( ok and value or 0 )
 
-    stats.dodgePct = GetDodgeChance() or 0
-    stats.parryPct = GetParryChance() or 0
-    stats.blockPct = GetBlockChance() or 0
+    stats.dodgePct = SafeUnbox( GetDodgeChance() or 0 )
+    stats.parryPct = SafeUnbox( GetParryChance() or 0 )
+    stats.blockPct = SafeUnbox( GetBlockChance() or 0 )
 
-    stats.strength = UnitStat("player", 1) or 0
-    stats.agility = UnitStat("player", 2) or 0
-    stats.intellect = UnitStat("player", 4) or 0
+    stats.strength = SafeUnbox( UnitStat("player", 1) or 0 )
+    stats.stamina = SafeUnbox( UnitStat("player", 3) or 0 )
+    stats.agility = SafeUnbox( UnitStat("player", 2) or 0 )
+    stats.intellect = SafeUnbox( UnitStat("player", 4) or 0 )
 
     stats.class = UnitClass("player") or "Unknown"
     
@@ -428,9 +469,38 @@ statCacheFrame:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
+local MAJOR_EXTERNAL_BUFFS = {
+    [2825] = true,   -- Bloodlust
+    [32182] = true,  -- Heroism
+    [80353] = true,  -- Time Warp
+    [264667] = true, -- Primal Rage
+    [10060] = true,  -- Power Infusion
+}
+
+local RAID_BUFFS = {
+    [21562] = true,  -- Power Word: Fortitude
+    [1126] = true,   -- Mark of the Wild
+    [1459] = true,   -- Arcane Intellect
+    [364314] = true, -- Blessing of the Bronze
+    [465] = true,    -- Devotion Aura
+    [183435] = true, -- Retribution Aura
+    [6673] = true,   -- Battle Shout
+    [462854] = true, -- Skyfury
+}
+
+local function ShouldTrackAura(aura)
+    if not aura then return false end
+    local spellID = SafeUnbox(aura.spellId)
+    if aura.isHelpful and (MAJOR_EXTERNAL_BUFFS[spellID] or RAID_BUFFS[spellID]) then
+        return true
+    end
+    return aura.sourceUnit == "player" and aura.duration and aura.duration > 0
+end
+
 local auraTrackingSuspended = false
 
 local function ReconcileActiveAuras()
+    -- All activeAuras keys now strings via Safe* helpers. Eliminates secret-key indexing risk entirely (and future-proofs if auraInstanceID ever protected).
     if not activeRun then return end
     activeRun.activeAuras = activeRun.activeAuras or {}
     activeRun.buffDurations = activeRun.buffDurations or {}
@@ -442,38 +512,43 @@ local function ReconcileActiveAuras()
         local aura = C_UnitAuras.GetAuraDataByIndex("player", index, "HELPFUL")
         if not aura then break end
         
-        local instID = aura.auraInstanceID or aura.auraInstanceId
-        if instID then
-            currentAuras[instID] = aura.spellId
+        if ShouldTrackAura(aura) then
+            local instID = aura.auraInstanceID or aura.auraInstanceId
+            if instID then
+                SafeSetAuraKey(currentAuras, instID, SafeUnbox(aura.spellId))
+            end
         end
         index = index + 1
     end
     
     -- Check for removals
     for instanceID, cache in pairs(activeRun.activeAuras) do
-        if type(instanceID) == "number" then
-            if not currentAuras[instanceID] then
+        local cache = SafeGetAuraKey(activeRun.activeAuras, instanceID)
+        if instanceID and instanceID ~= "" then
+            if not SafeGetAuraKey(currentAuras, instanceID) then
                 local duration = now - cache.startTime
                 if duration > 0 then
-                    activeRun.buffDurations[cache.spellID] = (activeRun.buffDurations[cache.spellID] or 0) + duration
+                    local unboxedSpellID = SafeUnbox(cache.spellID)
+                    activeRun.buffDurations[unboxedSpellID] = (activeRun.buffDurations[unboxedSpellID] or 0) + duration
                 end
-                activeRun.activeAuras[instanceID] = nil
+                SafeAuraKeyDelete(activeRun.activeAuras, instanceID)
             end
         end
     end
     
     -- Check for additions
     for instanceID, spellID in pairs(currentAuras) do
-        if not activeRun.activeAuras[instanceID] then
-            activeRun.activeAuras[instanceID] = {
-                spellID = spellID,
+        if not SafeGetAuraKey(activeRun.activeAuras, instanceID) then
+            SafeSetAuraKey(activeRun.activeAuras, instanceID, {
+                spellID = SafeUnbox(spellID),
                 startTime = now
-            }
+            })
         end
     end
 end
 
 local function CheckWeaponEnchants()
+    -- All activeAuras keys now strings via Safe* helpers. Eliminates secret-key indexing risk entirely (and future-proofs if auraInstanceID ever protected).
     if not activeRun then return end
     activeRun.activeAuras = activeRun.activeAuras or {}
     activeRun.buffDurations = activeRun.buffDurations or {}
@@ -481,74 +556,84 @@ local function CheckWeaponEnchants()
     local now = GetTime()
     local hasMH, mhExpire, mhCharges, mhEnchantID, hasOH, ohExpire, ohCharges, ohEnchantID = GetWeaponEnchantInfo()
     
+    -- Unbox enchant IDs using SafeUnbox before storing them.
+    mhEnchantID = mhEnchantID and SafeUnbox(mhEnchantID)
+    ohEnchantID = ohEnchantID and SafeUnbox(ohEnchantID)
+    
     -- Process Main Hand
-    local mhCache = activeRun.activeAuras["mh_imbue"]
+    local mhCache = SafeGetAuraKey(activeRun.activeAuras, "mh_imbue")
     if hasMH and mhEnchantID then
         if mhCache then
-            if mhCache.spellID ~= mhEnchantID then
+            local mhCacheSpellID = SafeUnbox(mhCache.spellID)
+            if mhCacheSpellID ~= mhEnchantID then
                 local duration = now - mhCache.startTime
                 if duration > 0 then
-                    activeRun.buffDurations[mhCache.spellID] = (activeRun.buffDurations[mhCache.spellID] or 0) + duration
+                    activeRun.buffDurations[mhCacheSpellID] = (activeRun.buffDurations[mhCacheSpellID] or 0) + duration
                 end
-                activeRun.activeAuras["mh_imbue"] = {
+                SafeSetAuraKey(activeRun.activeAuras, "mh_imbue", {
                     spellID = mhEnchantID,
                     startTime = now
-                }
+                })
             end
         else
-            activeRun.activeAuras["mh_imbue"] = {
+            SafeSetAuraKey(activeRun.activeAuras, "mh_imbue", {
                 spellID = mhEnchantID,
                 startTime = now
-            }
+            })
         end
     else
         if mhCache then
             local duration = now - mhCache.startTime
             if duration > 0 then
-                activeRun.buffDurations[mhCache.spellID] = (activeRun.buffDurations[mhCache.spellID] or 0) + duration
+                local mhCacheSpellID = SafeUnbox(mhCache.spellID)
+                activeRun.buffDurations[mhCacheSpellID] = (activeRun.buffDurations[mhCacheSpellID] or 0) + duration
             end
-            activeRun.activeAuras["mh_imbue"] = nil
+            SafeAuraKeyDelete(activeRun.activeAuras, "mh_imbue")
         end
     end
     
     -- Process Off Hand
-    local ohCache = activeRun.activeAuras["oh_imbue"]
+    local ohCache = SafeGetAuraKey(activeRun.activeAuras, "oh_imbue")
     if hasOH and ohEnchantID then
         if ohCache then
-            if ohCache.spellID ~= ohEnchantID then
+            local ohCacheSpellID = SafeUnbox(ohCache.spellID)
+            if ohCacheSpellID ~= ohEnchantID then
                 local duration = now - ohCache.startTime
                 if duration > 0 then
-                    activeRun.buffDurations[ohCache.spellID] = (activeRun.buffDurations[ohCache.spellID] or 0) + duration
+                    activeRun.buffDurations[ohCacheSpellID] = (activeRun.buffDurations[ohCacheSpellID] or 0) + duration
                 end
-                activeRun.activeAuras["oh_imbue"] = {
+                SafeSetAuraKey(activeRun.activeAuras, "oh_imbue", {
                     spellID = ohEnchantID,
                     startTime = now
-                }
+                })
             end
         else
-            activeRun.activeAuras["oh_imbue"] = {
+            SafeSetAuraKey(activeRun.activeAuras, "oh_imbue", {
                 spellID = ohEnchantID,
                 startTime = now
-            }
+            })
         end
     else
         if ohCache then
             local duration = now - ohCache.startTime
             if duration > 0 then
-                activeRun.buffDurations[ohCache.spellID] = (activeRun.buffDurations[ohCache.spellID] or 0) + duration
+                local ohCacheSpellID = SafeUnbox(ohCache.spellID)
+                activeRun.buffDurations[ohCacheSpellID] = (activeRun.buffDurations[ohCacheSpellID] or 0) + duration
             end
-            activeRun.activeAuras["oh_imbue"] = nil
+            SafeAuraKeyDelete(activeRun.activeAuras, "oh_imbue")
         end
     end
 end
 
 local function FlushActiveAuras(endTime)
+    -- All activeAuras keys now strings via Safe* helpers. Eliminates secret-key indexing risk entirely (and future-proofs if auraInstanceID ever protected).
     if not activeRun or not activeRun.activeAuras then return end
     local now = endTime or GetTime()
     for instanceID, cache in pairs(activeRun.activeAuras) do
         local duration = now - cache.startTime
         if duration > 0 then
-            activeRun.buffDurations[cache.spellID] = (activeRun.buffDurations[cache.spellID] or 0) + duration
+            local unboxedSpellID = SafeUnbox(cache.spellID)
+            activeRun.buffDurations[unboxedSpellID] = (activeRun.buffDurations[unboxedSpellID] or 0) + duration
         end
     end
     activeRun.activeAuras = {}
@@ -693,7 +778,7 @@ local function GetBestSessionIDForCurrentPull(initialSessionID)
     if #sessions == 0 then return nil end
 
     local latest = sessions[#sessions]
-    if latest and latest.sessionID == initialSessionID then
+    if latest and SafeSessionIDsEqual(latest.sessionID, initialSessionID) then
         -- No new combat occurred since starting the custom run
         return nil
     end
@@ -701,11 +786,12 @@ local function GetBestSessionIDForCurrentPull(initialSessionID)
     -- Walk from the end (most recent first)
     for i = #sessions, 1, -1 do
         local s = sessions[i]
-        if s.sessionID == initialSessionID then
+        if SafeSessionIDsEqual(s.sessionID, initialSessionID) then
             -- Reached the session that was active when we started tracking, anything before/at this is old
             break
         end
         local d = s.durationSeconds
+        d = SafeUnbox(d)
         if IsSecret(d) then
             return s.sessionID
         end
@@ -715,10 +801,11 @@ local function GetBestSessionIDForCurrentPull(initialSessionID)
     end
 
     local latestID = sessions[#sessions].sessionID
-    if latestID ~= initialSessionID then
+    if not SafeSessionIDsEqual(latestID, initialSessionID) then
         return latestID
     end
     return nil
+    -- Note: returned sessionID may be secret (for direct pass to C_DamageMeter.GetCombatSessionFromID etc). Our matching logic above now uses SafeSessionIDsEqual to avoid taint in compares. Per plan Step C.
 end
 
 local function GetActorTotalFromSpells(sessionID, dmType)
@@ -774,6 +861,7 @@ local function GetNativeMeterData(preferCurrent, initialSessionID)
 
     -- For short content, try to get one consistent sessionID from the available list.
     -- Then we'll query every metric type from that exact ID.
+    -- Note: lockedSessionID may be a secret value (from C_DamageMeter); it is ONLY passed raw to C_DamageMeter.GetCombatSessionFromID etc in the preferCurrent path. No comparisons or table key use on it here (Safe* used upstream in GetBest).
     local lockedSessionID = preferCurrent and GetBestSessionIDForCurrentPull(initialSessionID) or nil
 
     local function fetchForType(dmType)
@@ -842,13 +930,15 @@ local function GetNativeMeterData(preferCurrent, initialSessionID)
     local deathsD = fetchForType(Enum.DamageMeterType.Deaths, lockedSessionID)
 
     -- dur is ONLY used for the SafeDiv *fallback* when the meter did not supply a perSec.
-    -- We must keep this local free of secret values and never compare a secret against 0 (taint error).
-    -- See the user's error: "attempt to compare local 'dur' (a secret number value, while execution tainted by 'BuildCompare')"
+    -- Fixed by SafeUnbox + always-plain dur locals + SafeSessionIDsEqual. No secret participates in any == or key op.
     local function getSafeDur(d)
-        if not d or IsSecret(d) then return 0 end
-        return d
+        if not d then return 0 end
+        local u = SafeUnbox(d)
+        if IsSecret(d) or u == 0 then return 0 end   -- note: check secret on *original* for intent, but return plain 0
+        return u
     end
 
+    -- dur is *always* a plain Lua number here. All meter .duration values were unboxed at source in fetch returns.
     local dur = 0
     if dtD then dur = getSafeDur(dtD.duration) end
     if dur == 0 and healD then dur = getSafeDur(healD.duration) end
@@ -953,10 +1043,11 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
     BuildCompare_LastCombatSegment = nil
 
     local function FinalizeRecord()
-        local duration = capturedSource.duration or 0
-        if (IsSecret(duration) or duration == 0) and capturedSource.startGetTime then
+        -- duration/runDuration now guaranteed plain number before any comparison. Eliminates all secret-number compare paths for run lengths.
+        local duration = SafeUnbox(capturedSource.duration or 0)
+        if duration == 0 and capturedSource.startGetTime then
             duration = GetTime() - capturedSource.startGetTime
-        elseif (IsSecret(duration) or duration == 0) and capturedSource.startTime then
+        elseif duration == 0 and capturedSource.startTime then
             duration = time() - capturedSource.startTime
         end
 
@@ -1008,10 +1099,10 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
 
         -- Calculate buff/cooldown uptimes
         local buffUptimes = {}
-        local runDuration = duration
-        if (IsSecret(runDuration) or runDuration == 0) and capturedSource.startGetTime then
+        local runDuration = SafeUnbox(duration)
+        if runDuration == 0 and capturedSource.startGetTime then
             runDuration = GetTime() - capturedSource.startGetTime
-        elseif (IsSecret(runDuration) or runDuration == 0) and capturedSource.startTime then
+        elseif runDuration == 0 and capturedSource.startTime then
             runDuration = time() - capturedSource.startTime
         end
         if runDuration <= 0 then runDuration = 1 end
@@ -1022,13 +1113,14 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         for instanceID, cache in pairs(actAuras) do
             local dur = now - cache.startTime
             if dur > 0 then
-                bDurations[cache.spellID] = (bDurations[cache.spellID] or 0) + dur
+                local unboxedSpellID = SafeUnbox(cache.spellID)
+                bDurations[unboxedSpellID] = (bDurations[unboxedSpellID] or 0) + dur
             end
         end
         for spellID, dur in pairs(bDurations) do
             local pct = (dur / runDuration) * 100
             if pct > 100 then pct = 100 end
-            buffUptimes[spellID] = pct
+            buffUptimes[SafeUnbox(spellID)] = pct
         end
 
         local record = {
@@ -1075,26 +1167,12 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         table.insert(DB.runs, record)
         table.insert(CharDB.runs or {}, record)
 
-        local function SafeFormatVal(val)
-            if not val then return "0" end
-            if IsSecret(val) then
-                return "Pending Reload"
-            end
-            return BuildCompare_FormatNumber(val)
+        if record.keyLevel and record.keyLevel > 0 then
+            Print(string.format("Recorded run: %s - %s +%d", record.instance, record.difficulty, record.keyLevel))
+        else
+            Print(string.format("Recorded run: %s - %s", record.instance, record.difficulty))
         end
 
-        local function SafeFormatRate(val)
-            if not val then return "0" end
-            if IsSecret(val) then
-                return "Pending Reload"
-            end
-            return BuildCompare_FormatNumber(val)
-        end
-
-        Print(string.format("Recorded run: %s - %s +%d | DT: %s (%s DTPS) | AvDT: %s | Heal: %s | DefCDs: %d | Build: %s",
-            record.instance, record.difficulty, record.keyLevel,
-            SafeFormatVal(record.dt), SafeFormatRate(record.dtps), SafeFormatVal(record.avoidableDT), SafeFormatVal(record.healing),
-            #defensiveCDsUsed, record.buildLabel))
 
         if BuildCompareFrame and BuildCompareFrame:IsShown() then
             BuildCompare_RefreshUI()
@@ -1216,13 +1294,14 @@ local function OnCombatEvent(self, event, ...)
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         local unit, castGUID, spellID = ...
         if unit == "player" then
-            LogCD(spellID)
+            LogCD(SafeUnbox(spellID))
         end
     elseif event == "PLAYER_DEAD" then
         if activeRun then
             activeRun.deaths = (activeRun.deaths or 0) + 1
         end
     elseif event == "UNIT_AURA" then
+        -- All activeAuras keys now strings via Safe* helpers. Eliminates secret-key indexing risk entirely (and future-proofs if auraInstanceID ever protected).
         local unit, updateInfo = ...
         if unit ~= "player" then return end
         if not activeRun then return end
@@ -1236,13 +1315,14 @@ local function OnCombatEvent(self, event, ...)
             if updateInfo.removedAuraInstanceIDs then
                 local now = GetTime()
                 for _, instanceID in ipairs(updateInfo.removedAuraInstanceIDs) do
-                    local cache = activeRun.activeAuras[instanceID]
+                    local cache = SafeGetAuraKey(activeRun.activeAuras, instanceID)
                     if cache then
                         local duration = now - cache.startTime
                         if duration > 0 then
-                            activeRun.buffDurations[cache.spellID] = (activeRun.buffDurations[cache.spellID] or 0) + duration
+                            local unboxedSpellID = SafeUnbox(cache.spellID)
+                            activeRun.buffDurations[unboxedSpellID] = (activeRun.buffDurations[unboxedSpellID] or 0) + duration
                         end
-                        activeRun.activeAuras[instanceID] = nil
+                        SafeAuraKeyDelete(activeRun.activeAuras, instanceID)
                     end
                 end
             end
@@ -1250,13 +1330,13 @@ local function OnCombatEvent(self, event, ...)
             if updateInfo.addedAuras then
                 local now = GetTime()
                 for _, aura in ipairs(updateInfo.addedAuras) do
-                    if aura.isHelpful then
+                    if aura.isHelpful and ShouldTrackAura(aura) then
                         local instID = aura.auraInstanceID or aura.auraInstanceId
                         if instID then
-                            activeRun.activeAuras[instID] = {
-                                spellID = aura.spellId,
+                            SafeSetAuraKey(activeRun.activeAuras, instID, {
+                                spellID = SafeUnbox(aura.spellId),
                                 startTime = now
-                            }
+                            })
                         end
                     end
                 end

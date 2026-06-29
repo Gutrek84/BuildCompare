@@ -34,6 +34,17 @@ local SEASON_1_RAIDS = (BuildCompareData and BuildCompareData.SEASON_1_RAIDS) or
     }
 }
 
+local RAID_BUFFS = {
+    [21562] = true,   -- Power Word: Fortitude
+    [1126] = true,    -- Mark of the Wild
+    [1459] = true,    -- Arcane Intellect
+    [364314] = true,  -- Blessing of the Bronze
+    [465] = true,     -- Devotion Aura
+    [183435] = true,  -- Retribution Aura
+    [6673] = true,    -- Battle Shout
+    [462854] = true,  -- Skyfury
+}
+
 local currentMode = "mythic"  -- "mythic", "raid", "custom"
 local currentDungeon = nil
 local currentRaid = nil
@@ -967,6 +978,16 @@ function BuildCompare_RefreshUI()
             local gb = valB > valA
             addRow("Strength", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
 
+            -- Stamina
+            na, nb = saStats.stamina or 0, sbStats.stamina or 0
+            ta = BuildCompare_FormatNumber(na)
+            tb = BuildCompare_FormatNumber(nb)
+            valA = BuildCompare_UnboxSecret(na)
+            valB = BuildCompare_UnboxSecret(nb)
+            ga = valA > valB
+            gb = valB > valA
+            addRow("Stamina", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+
             -- Agility
             na, nb = saStats.agility or 0, sbStats.agility or 0
             ta = BuildCompare_FormatNumber(na)
@@ -1087,17 +1108,62 @@ function BuildCompare_RefreshUI()
 
             local aUptimes = a.buffUptimes or {}
             local bUptimes = b.buffUptimes or {}
+
+            -- Determine txtA and txtB by mapping which of the standard raid buffs were present (uptime > 1.0) in run A and run B.
+            local raidBuffOrder = {
+                { id = 21562, abbr = "FT" },
+                { id = 1126, abbr = "MW" },
+                { id = 1459, abbr = "AI" },
+                { id = 364314, abbr = "BB" },
+                { id = 465, abbr = "DA" },
+                { id = 183435, abbr = "RA" },
+                { id = 6673, abbr = "BC" },
+                { id = 462854, abbr = "SF" },
+            }
+
+            local function getUptime(uptimes, spellID)
+                if not spellID then return 0 end
+                return uptimes[spellID] or uptimes[tostring(spellID)] or uptimes[tonumber(spellID)] or 0
+            end
+
+            local presentA = {}
+            local presentB = {}
+            for _, info in ipairs(raidBuffOrder) do
+                local uptimeA = getUptime(aUptimes, info.id)
+                local uptimeB = getUptime(bUptimes, info.id)
+                if uptimeA > 1.0 then
+                    table.insert(presentA, info.abbr)
+                end
+                if uptimeB > 1.0 then
+                    table.insert(presentB, info.abbr)
+                end
+            end
+
+            local txtA = #presentA > 0 and table.concat(presentA, ", ") or "None"
+            local txtB = #presentB > 0 and table.concat(presentB, ", ") or "None"
+
+            -- Add a consolidated row first:
+            addRow("Raid Buffs", nil, nil, txtA, txtB, "", false, false, 6)
+
+            -- Render the other personal class buffs (excluding the ones in RAID_BUFFS) below this row.
             local uniqueSpells = {}
             for spellID in pairs(aUptimes) do
-                uniqueSpells[spellID] = true
+                local numID = tonumber(spellID)
+                if not RAID_BUFFS[numID or spellID] then
+                    uniqueSpells[spellID] = true
+                end
             end
             for spellID in pairs(bUptimes) do
-                uniqueSpells[spellID] = true
+                local numID = tonumber(spellID)
+                if not RAID_BUFFS[numID or spellID] then
+                    uniqueSpells[spellID] = true
+                end
             end
 
             local function GetSpellName(spellID)
                 if not spellID then return "Unknown" end
-                local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
+                local numID = tonumber(spellID)
+                local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(numID or spellID)
                 return spellInfo and spellInfo.name or ("Spell " .. spellID)
             end
 
@@ -1112,12 +1178,12 @@ function BuildCompare_RefreshUI()
             end)
 
             for _, spellID in ipairs(sortedSpells) do
-                local uptimeA = aUptimes[spellID] or 0
-                local uptimeB = bUptimes[spellID] or 0
+                local uptimeA = getUptime(aUptimes, spellID)
+                local uptimeB = getUptime(bUptimes, spellID)
                 if uptimeA > 1.0 or uptimeB > 1.0 then
                     local spellName = GetSpellName(spellID)
-                    local txtA = string.format("%.1f%%", uptimeA)
-                    local txtB = string.format("%.1f%%", uptimeB)
+                    local specTxtA = string.format("%.1f%%", uptimeA)
+                    local specTxtB = string.format("%.1f%%", uptimeB)
                     local diffVal = uptimeB - uptimeA
                     local diffTxt
                     if diffVal > 0.05 then
@@ -1129,7 +1195,7 @@ function BuildCompare_RefreshUI()
                     end
                     local ga = uptimeA > uptimeB
                     local gb = uptimeB > uptimeA
-                    addRow(spellName, uptimeA, uptimeB, txtA, txtB, diffTxt, ga, gb, 6)
+                    addRow(spellName, uptimeA, uptimeB, specTxtA, specTxtB, diffTxt, ga, gb, 6)
                 end
             end
         end
