@@ -79,11 +79,6 @@ If the API fields are slightly different on your build, run in-game:
 `/dump C_DamageMeter.GetCombatSessionFromType(Enum.DamageMeterSessionType.Overall, Enum.DamageMeterType.DamageTaken)`
 and inspect the returned structure (combatSources, find isLocalPlayer). GetPlayerMeterSummary / GetNativeMeterData in Core.lua are now purely native C_DamageMeter (streamlined, no external addon dependency at all).
 
-## Development / Iterating with Grok
-
-If you want to keep improving this with AI assistance later:
-- Point Grok at the source folder: `grok --cwd "C:\Users\Owner\projects\wow-addons\BuildCompare"`
-- Make sure the `AGENTS.md` in this folder (or copy it next to the .toc when testing) is present — it contains the critical "never touch raw CLEU" rule and other WoW Lua conventions.
 
 ## Features Implemented (this update)
 
