@@ -1145,6 +1145,39 @@ function BuildCompare_RefreshUI()
             -- Add a consolidated row first:
             addRow("Raid Buffs", nil, nil, txtA, txtB, "", false, false, 6)
 
+            local rowFrame = rows[#rows]
+            local function createTooltipTarget(colFrame, txtVal, presentList)
+                if not txtVal or txtVal == "None" or txtVal == "" then return end
+                local f = CreateFrame("Frame", nil, rowFrame)
+                f:SetAllPoints(colFrame)
+                f:EnableMouse(true)
+                f:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:ClearLines()
+                    GameTooltip:AddLine("Active Raid Buffs:", 1, 0.82, 0)
+                    local nameMap = {
+                        FT = "Power Word: Fortitude",
+                        MW = "Mark of the Wild",
+                        AI = "Arcane Intellect",
+                        BB = "Blessing of the Bronze",
+                        DA = "Devotion Aura",
+                        RA = "Retribution Aura",
+                        BC = "Battle Shout",
+                        SF = "Skyfury"
+                    }
+                    for _, abbr in ipairs(presentList) do
+                        local fullName = nameMap[abbr] or abbr
+                        GameTooltip:AddDoubleLine(abbr, "|cFFFFFFFF" .. fullName .. "|r")
+                    end
+                    GameTooltip:Show()
+                end)
+                f:SetScript("OnLeave", function(self)
+                    GameTooltip:Hide()
+                end)
+            end
+            createTooltipTarget(rowFrame.a, txtA, presentA)
+            createTooltipTarget(rowFrame.b, txtB, presentB)
+
             -- Render the other personal class buffs (excluding the ones in RAID_BUFFS) below this row.
             local uniqueSpells = {}
             for spellID in pairs(aUptimes) do
