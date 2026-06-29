@@ -225,7 +225,7 @@ local function ShowSimpleDropdown(anchor, options, onSelect)
         end
     end)
 
-    local maxVisible = 10
+    local maxVisible = 6
     local useScroll = #options > maxVisible
     local visibleCount = useScroll and maxVisible or #options
     local itemHeight = 20
