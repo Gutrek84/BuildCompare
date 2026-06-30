@@ -1,6 +1,27 @@
 -- Wrapper to handle removal of global GetSpellInfo in WoW TWW (11.0+) / Midnight (12.0+)
 local AddonName, _ = ...
 
+function BuildCompare_SafeCall(func, defaultVal, ...)
+    if type(func) ~= "function" then
+        return defaultVal
+    end
+    local results = {pcall(func, ...)}
+    local success = table.remove(results, 1)
+    if success then
+        return unpack(results)
+    else
+        local err = results[1] or "Unknown error"
+        if not _G.BuildCompare_SessionErrors then
+            _G.BuildCompare_SessionErrors = {}
+        end
+        table.insert(_G.BuildCompare_SessionErrors, err)
+        if #_G.BuildCompare_SessionErrors > 50 then
+            table.remove(_G.BuildCompare_SessionErrors, 1)
+        end
+        return defaultVal
+    end
+end
+
 local GetSpellInfo = GetSpellInfo or function(spellID)
     if not spellID then return nil end
     local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
@@ -232,7 +253,7 @@ function BuildCompare_SnapshotTalents()
 
     if not configID and C_Traits and C_Traits.GetConfigIDBySystemID then
         -- Fallback generic (rare for class talents)
-        configID = C_Traits.GetConfigIDBySystemID(1) -- rough
+        configID = BuildCompare_SafeCall(C_Traits.GetConfigIDBySystemID, nil, 1) -- rough
     end
 
     if not configID then
@@ -240,7 +261,7 @@ function BuildCompare_SnapshotTalents()
         return result
     end
 
-    local configInfo = C_Traits and C_Traits.GetConfigInfo and C_Traits.GetConfigInfo(configID)
+    local configInfo = C_Traits and C_Traits.GetConfigInfo and BuildCompare_SafeCall(C_Traits.GetConfigInfo, nil, configID)
     if configInfo then
         result.loadoutName = configInfo.name or "Default Loadout"
     end
@@ -251,15 +272,15 @@ function BuildCompare_SnapshotTalents()
     if C_Traits and C_Traits.GetTreeNodes and C_Traits.GetNodeInfo and C_Traits.GetEntryInfo and C_Traits.GetDefinitionInfo then
         local treeIDs = (configInfo and configInfo.treeIDs) or {}
         for _, treeID in ipairs(treeIDs) do
-            local nodes = C_Traits.GetTreeNodes(treeID) or {}
+            local nodes = BuildCompare_SafeCall(C_Traits.GetTreeNodes, nil, treeID) or {}
             for _, nodeID in ipairs(nodes) do
-                local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
+                local nodeInfo = BuildCompare_SafeCall(C_Traits.GetNodeInfo, nil, configID, nodeID)
                 if nodeInfo then
                     local committed = nodeInfo.entryIDsWithCommittedRanks or nodeInfo.entryIDs or {}
                     for _, entryID in ipairs(committed) do
-                        local entryInfo = C_Traits.GetEntryInfo(configID, entryID)
+                        local entryInfo = BuildCompare_SafeCall(C_Traits.GetEntryInfo, nil, configID, entryID)
                         if entryInfo and entryInfo.definitionID then
-                            local defInfo = C_Traits.GetDefinitionInfo(entryInfo.definitionID)
+                            local defInfo = BuildCompare_SafeCall(C_Traits.GetDefinitionInfo, nil, entryInfo.definitionID)
                             if defInfo and defInfo.spellID then
                                 local spellName = GetSpellInfo and GetSpellInfo(defInfo.spellID) or tostring(defInfo.spellID)
                                 if spellName and not seen[spellName] then

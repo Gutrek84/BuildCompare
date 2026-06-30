@@ -6,6 +6,7 @@ local AddonName, _ = ...
 -- Saved DB (populated by WoW from SavedVariables in .toc)
 BuildCompareDB = BuildCompareDB or { runs = {}, settings = {} }
 BuildCompareCharDB = BuildCompareCharDB or { runs = {} }  -- per-char if preferred
+_G.BuildCompare_SessionErrors = _G.BuildCompare_SessionErrors or {}
 
 local DB = BuildCompareDB
 local CharDB = BuildCompareCharDB
@@ -211,8 +212,8 @@ end
 
 local function GetLatestSessionID()
     if C_DamageMeter and C_DamageMeter.GetAvailableCombatSessions then
-        local sessions = C_DamageMeter.GetAvailableCombatSessions()
-        if sessions and #sessions > 0 then
+        local sessions = BuildCompare_SafeCall(C_DamageMeter.GetAvailableCombatSessions, nil)
+        for _, sess in ipairs(sessions or {}) do
             return sessions[#sessions].sessionID
         end
     end
@@ -255,18 +256,14 @@ local function BuildCompare_DebugMeter()
 
         local sessionID = nil
         if C_DamageMeter.GetAvailableCombatSessions then
-            local sessions = C_DamageMeter.GetAvailableCombatSessions()
-            if sessions then
-                Print("Sessions count: " .. #sessions)
-                for i, sInfo in ipairs(sessions) do
-                    Print(string.format("  [%d] SessionID: %s, Name: %s, Duration: %ss", 
-                        i, tostring(sInfo.sessionID), tostring(sInfo.name), tostring(sInfo.durationSeconds)))
-                end
-                if #sessions > 0 then
-                    sessionID = sessions[#sessions].sessionID
-                end
-            else
-                Print("GetAvailableCombatSessions returned nil")
+            local sessions = BuildCompare_SafeCall(C_DamageMeter.GetAvailableCombatSessions, nil)
+            Print("Sessions count: " .. #sessions)
+            for i, sInfo in ipairs(sessions or {}) do
+                Print(string.format("  [%d] SessionID: %s, Name: %s, Duration: %ss", 
+                    i, tostring(sInfo.sessionID), tostring(sInfo.name), tostring(sInfo.durationSeconds)))
+            end
+            if sessions and #sessions > 0 then
+                sessionID = sessions[#sessions].sessionID
             end
         end
 
@@ -287,8 +284,9 @@ local function BuildCompare_DebugMeter()
                 SafeFormatVal(nativeSummary.avoidableDT), SafeFormatVal(nativeSummary.healing), SafeFormatVal(nativeSummary.dps),
                 SafeFormatVal(nativeSummary.dtps), SafeFormatVal(nativeSummary.hps), tostring(nativeSummary.hasActivity)))
             -- Also show direct GetCombatSessionFromType example (Overall + DamageTaken)
-            if Enum and Enum.DamageMeterSessionType and Enum.DamageMeterType then
-                local dtSess = C_DamageMeter.GetCombatSessionFromType(Enum.DamageMeterSessionType.Overall, Enum.DamageMeterType.DamageTaken)
+            if Enum and Enum.DamageMeterSessionType and Enum.DamageMeterType and C_DamageMeter.GetCombatSessionFromType then
+                local dtSess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromType, nil, Enum.DamageMeterSessionType.Overall, Enum.DamageMeterType.DamageTaken)
+                local dSess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromType, nil, Enum.DamageMeterSessionType.Overall, Enum.DamageMeterType.Damage)
                 if dtSess then
                     Print("Direct Overall+DT session: totalAmount=" .. SafeFormatVal(dtSess.totalAmount) .. " sources=" .. #(dtSess.combatSources or {}))
                 end
@@ -298,31 +296,28 @@ local function BuildCompare_DebugMeter()
         end
 
         if sessionID and C_DamageMeter.GetCombatSessionFromID then
-            -- Optional direct ID fetch for one metric
-            if Enum and Enum.DamageMeterType then
-                local idSess = C_DamageMeter.GetCombatSessionFromID(sessionID, Enum.DamageMeterType.DamageTaken)
-                if idSess then
-                    Print("SessionFromID DT available, sources: " .. #(idSess.combatSources or {}))
-                end
+            local idSess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromID, nil, sessionID, Enum.DamageMeterType.DamageTaken)
+            if idSess then
+                Print("SessionFromID DT available, sources: " .. #(idSess.combatSources or {}))
+            end
 
-                -- Debug look up player's source for Enum.DamageMeterType.Interrupts
-                local intSess = C_DamageMeter.GetCombatSessionFromID(sessionID, Enum.DamageMeterType.Interrupts)
-                if intSess and intSess.combatSources then
-                    local pGUID = UnitGUID("player")
-                    for _, src in ipairs(intSess.combatSources) do
-                        if src.isLocalPlayer or (pGUID and src.guid == pGUID) then
-                            Print("Player Interrupts Source found in debug:")
-                            for k, v in pairs(src) do
-                                if type(v) == "table" then
-                                    Print(string.format("  src.%s = [table] (size: %d)", tostring(k), #v))
-                                    if k == "combatSpells" then
-                                        for idx, spell in ipairs(v) do
-                                            Print(string.format("    spell[%d]: ID=%s, name=%s, totalAmount=%s", idx, tostring(spell.spellID), tostring(spell.name), tostring(spell.totalAmount)))
-                                        end
+            -- Debug look up player's source for Enum.DamageMeterType.Interrupts
+            local intSess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromID, nil, sessionID, Enum.DamageMeterType.Interrupts)
+            if intSess and intSess.combatSources then
+                local pGUID = UnitGUID("player")
+                for _, src in ipairs(intSess.combatSources) do
+                    if src.isLocalPlayer or (pGUID and src.guid == pGUID) then
+                        Print("Player Interrupts Source found in debug:")
+                        for k, v in pairs(src) do
+                            if type(v) == "table" then
+                                Print(string.format("  src.%s = [table] (size: %d)", tostring(k), #v))
+                                if k == "combatSpells" then
+                                    for idx, spell in ipairs(v) do
+                                        Print(string.format("    spell[%d]: ID=%s, name=%s, totalAmount=%s", idx, tostring(spell.spellID), tostring(spell.name), tostring(spell.totalAmount)))
                                     end
-                                else
-                                    Print(string.format("  src.%s = %s", tostring(k), tostring(v)))
                                 end
+                            else
+                                Print(string.format("  src.%s = %s", tostring(k), tostring(v)))
                             end
                         end
                     end
@@ -343,27 +338,33 @@ SlashCmdList["BUILDCOMPARE"] = function(msg)
         BuildCompare_DebugMeter()
     elseif msg == "mini" then
         if _G.BuildCompare_ShowMiniCurrent then _G.BuildCompare_ShowMiniCurrent() end
+    elseif msg == "errors" then
+        Print("Last 10 Session Errors:")
+        local errs = _G.BuildCompare_SessionErrors or {}
+        local startIdx = math.max(1, #errs - 9)
+        for i = startIdx, #errs do
+            Print(i .. ": " .. tostring(errs[i]))
+        end
+        if #errs == 0 then Print("No errors logged.") end
     else
-        Print("Commands: /bc | /bc open | /bc record | /bc clear | /bc debug | /bc mini")
+        Print("Commands: /bc | /bc open | /bc record | /bc clear | /bc debug | /bc mini | /bc errors")
     end
 end
 
 -- Detect if we are in a trackable instance (M+ focus for now; extend for raids)
-local function IsTrackableContent()
-    local inInstance, instanceType = IsInInstance()
-    if not inInstance then return false end
-
-    local name, instanceType, difficultyID, difficultyName, maxPlayers, dynamicDifficulty, isDynamic, instanceMapID, instanceGroupSize = GetInstanceInfo()
-
+local function GetCurrentInstanceContext()
+    local name, instanceType, difficultyID, difficultyName, maxPlayers, dynamicDifficulty, isDynamic, instanceMapID, instanceGroupSize = BuildCompare_SafeCall(GetInstanceInfo, nil)
+    local context = {name = name, difficultyID = difficultyID}
     -- Streamlined: only auto-track full Mythic+ runs (via keystone) and individual raid bosses (via ENCOUNTER).
     -- Removed all auto for dummies, delves, outdoor, raid trash, etc.
-    if instanceType == "party" or instanceType == "raid" or instanceType == "scenario" then
-        local keystoneLevel = C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo and select(1, C_ChallengeMode.GetActiveKeystoneInfo()) or 0
-        if keystoneLevel > 0 or difficultyID == 16 or difficultyID == 15 or difficultyID == 17 then -- M+, mythic, heroic, etc.
-            return true, name, difficultyName, keystoneLevel, false
-        end
+    if instanceType == "party" and difficultyID == 8 then -- Mythic Keystone
+        local keystoneLevel = C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo and select(1, BuildCompare_SafeCall(C_ChallengeMode.GetActiveKeystoneInfo, 0)) or 0
+        context.name = string.format("%s (+%d)", name or "Unknown", keystoneLevel)
+        return true, context
+    elseif difficultyID == 16 or difficultyID == 15 or difficultyID == 17 then -- M+, mythic, heroic, etc.
+        return true, context
     end
-    return false
+    return false, context
 end
 
 local function GetHeroSpecName()
@@ -374,15 +375,15 @@ local function GetHeroSpecName()
     if not configID then
         return "None"
     end
-    local configInfo = C_Traits and C_Traits.GetConfigInfo and C_Traits.GetConfigInfo(configID)
+    local configInfo = C_Traits and C_Traits.GetConfigInfo and BuildCompare_SafeCall(C_Traits.GetConfigInfo, nil, configID)
     if configInfo and configInfo.treeIDs then
         for _, treeID in ipairs(configInfo.treeIDs) do
-            local nodes = C_Traits.GetTreeNodes(treeID)
+            local nodes = BuildCompare_SafeCall(C_Traits.GetTreeNodes, nil, treeID)
             if nodes then
                 for _, nodeID in ipairs(nodes) do
-                    local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
+                    local nodeInfo = BuildCompare_SafeCall(C_Traits.GetNodeInfo, nil, configID, nodeID)
                     if nodeInfo and nodeInfo.subTreeID then
-                        local subTreeInfo = C_Traits.GetSubTreeInfo(configID, nodeInfo.subTreeID)
+                        local subTreeInfo = BuildCompare_SafeCall(C_Traits.GetSubTreeInfo, nil, configID, nodeInfo.subTreeID)
                         if subTreeInfo and subTreeInfo.isActive and subTreeInfo.name and subTreeInfo.name ~= "" then
                             return subTreeInfo.name
                         end
@@ -431,12 +432,12 @@ local function SnapshotPlayerStats()
     stats.dodgePct = SafeUnbox( GetDodgeChance() or 0 )
     stats.parryPct = SafeUnbox( GetParryChance() or 0 )
     stats.blockPct = SafeUnbox( GetBlockChance() or 0 )
-
-    stats.strength = SafeUnbox( UnitStat("player", 1) or 0 )
-    stats.stamina = SafeUnbox( UnitStat("player", 3) or 0 )
-    stats.agility = SafeUnbox( UnitStat("player", 2) or 0 )
-    stats.intellect = SafeUnbox( UnitStat("player", 4) or 0 )
-
+    -- Snapshot Primary Stats
+    stats.strength = SafeUnbox( BuildCompare_SafeCall(UnitStat, 0, "player", 1) or 0 )
+    stats.stamina = SafeUnbox( BuildCompare_SafeCall(UnitStat, 0, "player", 3) or 0 )
+    stats.agility = SafeUnbox( BuildCompare_SafeCall(UnitStat, 0, "player", 2) or 0 )
+    stats.intellect = SafeUnbox( BuildCompare_SafeCall(UnitStat, 0, "player", 4) or 0 )
+    stats.mastery = SafeUnbox( GetMasteryEffect() or 0 )
     local _, equippedItemLevel = GetAverageItemLevel()
     stats.ilvl = SafeUnbox(equippedItemLevel or 0)
 
@@ -739,7 +740,7 @@ local function StartCustomRun()
             local group = {}
             local numMembers = GetNumGroupMembers()
             if numMembers > 0 then
-                local prefix = IsInRaid() and "raid" or "party"
+                local prefix = IsInRaid() or "party"
                 local limit = IsInRaid() and numMembers or (numMembers - 1)
                 
                 -- Player
@@ -882,7 +883,7 @@ local function GetBestSessionIDForCurrentPull(initialSessionID, startedInCombat,
     if not C_DamageMeter or not C_DamageMeter.GetAvailableCombatSessions then
         return nil
     end
-    local sessions = C_DamageMeter.GetAvailableCombatSessions() or {}
+    local sessions = BuildCompare_SafeCall(C_DamageMeter.GetAvailableCombatSessions, nil) or {}
     if #sessions == 0 then return nil end
 
     local latest = sessions[#sessions]
@@ -925,8 +926,8 @@ local function GetActorTotalFromSpells(sessionID, dmType)
     end
     local pGUID = UnitGUID("player")
     if not pGUID then return nil end
-    local ok, source = pcall(C_DamageMeter.GetCombatSessionSourceFromID, sessionID, dmType, pGUID)
-    if ok and source and source.combatSpells then
+    local source = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionSourceFromID, nil, sessionID, dmType, pGUID)
+    if source and source.combatSpells then
         local sum = 0
         for _, spell in ipairs(source.combatSpells) do
             sum = sum + (spell.totalAmount or 0)
@@ -942,8 +943,8 @@ local function GetActorTotalFromSpellsByType(sessionType, dmType)
     end
     local pGUID = UnitGUID("player")
     if not pGUID then return nil end
-    local ok, source = pcall(C_DamageMeter.GetCombatSessionSourceFromType, sessionType, dmType, pGUID)
-    if ok and source and source.combatSpells then
+    local source = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionSourceFromType, nil, sessionType, dmType, pGUID)
+    if source and source.combatSpells then
         local sum = 0
         for _, spell in ipairs(source.combatSpells) do
             sum = sum + (spell.totalAmount or 0)
@@ -962,10 +963,8 @@ local function GetNativeMeterData(preferCurrent, initialSessionID, startedInComb
     if not C_DamageMeter or not C_DamageMeter.IsDamageMeterAvailable then
         return nil
     end
-    local avail, _reason = C_DamageMeter.IsDamageMeterAvailable()
-    if not avail then
-        return nil
-    end
+    local avail, _reason = BuildCompare_SafeCall(C_DamageMeter.IsDamageMeterAvailable, false)
+    if not avail then return nil end
     if not Enum or not Enum.DamageMeterSessionType or not Enum.DamageMeterType then
         return nil
     end
@@ -979,7 +978,7 @@ local function GetNativeMeterData(preferCurrent, initialSessionID, startedInComb
         if preferCurrent then
             if lockedSessionID then
                 if C_DamageMeter.GetCombatSessionFromID then
-                    local sess = C_DamageMeter.GetCombatSessionFromID(lockedSessionID, dmType)
+                    local sess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromID, nil, lockedSessionID, dmType)
                     if sess and sess.combatSources and #sess.combatSources > 0 then
                         for _, src in ipairs(sess.combatSources) do
                             if src.isLocalPlayer then
@@ -1007,7 +1006,7 @@ local function GetNativeMeterData(preferCurrent, initialSessionID, startedInComb
         local sessionOrder = {Enum.DamageMeterSessionType.Overall, Enum.DamageMeterSessionType.Current}
 
         for _, st in ipairs(sessionOrder) do
-            local sess = C_DamageMeter.GetCombatSessionFromType(st, dmType)
+            local sess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromType, nil, st, dmType)
             if sess and sess.combatSources and #sess.combatSources > 0 then
                 for _, src in ipairs(sess.combatSources) do
                     if src.isLocalPlayer then
@@ -1506,6 +1505,17 @@ f:SetScript("OnEvent", function(self, event, arg1, ...)
         BuildCompareCharDB = BuildCompareCharDB or { runs = {} }
         DB = BuildCompareDB
         CharDB = BuildCompareCharDB
+        
+        if not DB.schemaVersion or DB.schemaVersion < 1 then
+            DB.schemaVersion = 1
+            for _, run in ipairs(DB.runs or {}) do
+                run.damageTaken = run.damageTaken or 0
+                run.healingDone = run.healingDone or 0
+                run.dps = run.dps or 0
+            end
+            Print("BuildCompare database schema updated to version 1.")
+        end
+
         Print("BuildCompare loaded. Use /bc to open. Auto-records on M+ complete / boss kill.")
     elseif event == "PLAYER_LOGIN" then
         playerGUID = UnitGUID("player")

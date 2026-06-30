@@ -1354,9 +1354,9 @@ function BuildCompare_RefreshUI()
             -- Determine player's primary stat (highest base stat wins)
             local primaryStat = "strength"
             do
-                local _, str = UnitStat("player", 1)
-                local _, agi = UnitStat("player", 2)
-                local _, int = UnitStat("player", 4)
+                local _, str = BuildCompare_SafeCall(UnitStat, nil, "player", 1)
+                local _, agi = BuildCompare_SafeCall(UnitStat, nil, "player", 2)
+                local _, int = BuildCompare_SafeCall(UnitStat, nil, "player", 4)
                 str = str or 0; agi = agi or 0; int = int or 0
                 if agi > str and agi > int then
                     primaryStat = "agility"
