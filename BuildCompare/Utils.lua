@@ -28,6 +28,7 @@ function BuildCompare_UnboxSecret(val)
     return 0
 end
 
+
 -- Format large numbers into clean abbreviations (e.g. 1.5k, 15k, 150k, 1.0m, 15m, 150m)
 -- <1000 as integer; for k/m: 1 decimal only if the scaled value is <10, whole number without decimal when >=10 (exact user spec)
 function BuildCompare_FormatNumber(val)

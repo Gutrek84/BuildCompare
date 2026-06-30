@@ -149,7 +149,7 @@ local function CreateBarRow(parent, index, run)
     -- Top Line: Run name and build label
     row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.label:SetPoint("TOPLEFT", row, "TOPLEFT", 55, -2)
-    row.label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    row.label:SetPoint("RIGHT", row, "RIGHT", -42, 0)
     row.label:SetJustifyH("LEFT")
     row.label:SetText(BuildCompare_GetRunLabel(run) or run.buildLabel or "?")
 
@@ -160,7 +160,7 @@ local function CreateBarRow(parent, index, run)
     row.dtBar:SetMinMaxValues(0, 100)
     row.dtBar:SetValue(50)
     row.dtBar:SetPoint("TOPLEFT", row, "TOPLEFT", 55, -18)
-    row.dtBar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -4, -4)
+    row.dtBar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -42, -4)
 
     -- Text overlay on bar
     row.text = row.dtBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -169,6 +169,98 @@ local function CreateBarRow(parent, index, run)
     local spec = run and run.stats and run.stats.spec or "None"
     local heroSpec = run and run.stats and run.stats.heroSpec or "None"
     row.text:SetFormattedText("%s / %s / %s", class, spec, heroSpec)
+
+    -- Delete run button
+    row.deleteBtn = CreateFrame("Button", nil, row)
+    row.deleteBtn:SetSize(16, 16)
+    row.deleteBtn:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+
+    local delFS = row.deleteBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    delFS:SetPoint("CENTER")
+    delFS:SetText("|cFFFF3333X|r")
+    row.deleteBtn:SetFontString(delFS)
+
+    row.deleteBtn:SetScript("OnEnter", function()
+        delFS:SetText("|cFFFF6666X|r") -- lighter red on hover
+    end)
+    row.deleteBtn:SetScript("OnLeave", function()
+        delFS:SetText("|cFFFF3333X|r")
+    end)
+    row.deleteBtn:SetScript("OnClick", function()
+        if not run or not run.id then return end
+        local runLabel = BuildCompare_GetRunLabel(run) or run.buildLabel or "Unknown"
+        StaticPopup_Show("BUILDCOMPARE_CONFIRM_DELETE", runLabel, nil, run)
+    end)
+
+    -- Note edit button
+    row.noteBtn = CreateFrame("Button", nil, row)
+    row.noteBtn:SetSize(16, 16)
+    row.noteBtn:SetPoint("RIGHT", row.deleteBtn, "LEFT", -4, 0)
+
+    local noteFS = row.noteBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    noteFS:SetPoint("CENTER")
+    
+    local hasNote = run and run.note and run.note ~= ""
+    if hasNote then
+        noteFS:SetText("|cFFFFD100N|r")
+    else
+        noteFS:SetText("|cFF777777N|r")
+    end
+    row.noteBtn:SetFontString(noteFS)
+
+    row.noteBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:ClearLines()
+        if run and run.note and run.note ~= "" then
+            GameTooltip:AddLine("Edit Note", 1, 0.82, 0)
+            GameTooltip:AddLine(run.note, 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Add Note", 1, 0.82, 0)
+        end
+        GameTooltip:Show()
+        noteFS:SetText("|cFFFFFFFFN|r")
+    end)
+    row.noteBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+        if run and run.note and run.note ~= "" then
+            noteFS:SetText("|cFFFFD100N|r")
+        else
+            noteFS:SetText("|cFF777777N|r")
+        end
+    end)
+    row.noteBtn:SetScript("OnClick", function()
+        if not run or not run.id then return end
+        StaticPopup_Show("BUILDCOMPARE_EDIT_NOTE", nil, nil, run)
+    end)
+
+    -- Row tooltip
+    local function ShowRowTooltip(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:ClearLines()
+        local label = BuildCompare_GetRunLabel(run) or run.buildLabel or "Unknown Run"
+        GameTooltip:AddLine(label, 1, 0.82, 0)
+        
+        if run.startTime then
+            local dateStr = date("%c", run.startTime)
+            GameTooltip:AddDoubleLine("Recorded:", dateStr, 0.7, 0.7, 0.7, 1, 1, 1)
+        end
+        
+        local pClass = run.stats and run.stats.class or "Unknown"
+        local pSpec = run.stats and run.stats.spec or "None"
+        local ilvl = run.stats and run.stats.ilvl or 0
+        GameTooltip:AddDoubleLine("Player:", string.format("%s %s (iLvl %.1f)", pSpec, pClass, ilvl), 0.7, 0.7, 0.7, 1, 1, 1)
+        
+        if run.note and run.note ~= "" then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Note:", 1, 0.82, 0)
+            GameTooltip:AddLine(run.note, 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+    end
+
+    row:EnableMouse(true)
+    row:SetScript("OnEnter", ShowRowTooltip)
+    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- Store run ref
     row.run = run
@@ -701,88 +793,82 @@ local B_W = 106
 local DIFF_W = 106
 
 local function CreateAlignedCompareRow(parent, y, isHeader, metric, aVal, bVal, diffVal, aIsGreen, bIsGreen)
+    local isSection = isHeader and (not aVal or aVal == "") and (not bVal or bVal == "")
     local rowH = isHeader and 17 or 14
     local row = CreateFrame("Frame", nil, parent)
     row:SetHeight(rowH)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 2, -y)
     row:SetPoint("RIGHT", parent, "RIGHT", -2, 0)
 
-    if isHeader then
-        row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        row.label:SetPoint("LEFT", 2, 0)
-        row.label:SetWidth(LABEL_W)
-        row.label:SetText(metric or "Metric")
-        row.a = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        row.a:SetPoint("LEFT", row.label, "RIGHT", 3, 0)
-        row.a:SetWidth(A_W)
-        row.a:SetFormattedText("%s", aVal or "")
-        row.b = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        row.b:SetPoint("LEFT", row.a, "RIGHT", 3, 0)
-        row.b:SetWidth(B_W)
-        row.b:SetFormattedText("%s", bVal or "")
-        row.d = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        row.d:SetPoint("LEFT", row.b, "RIGHT", 3, 0)
-        row.d:SetWidth(DIFF_W)
-        row.d:SetFormattedText("%s", diffVal or "")
+    -- Metric label column
+    row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.label:SetPoint("LEFT", 2, 0)
+    if isSection then
+        row.label:SetWidth(LABEL_W + A_W + B_W + DIFF_W + 12)
     else
-        -- metric / label col
-        row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        row.label:SetPoint("LEFT", 2, 0)
         row.label:SetWidth(LABEL_W)
-        row.label:SetText(metric or "")
-
-        -- vertical divider after label
-        local v1 = row:CreateTexture(nil, "OVERLAY")
-        v1:SetColorTexture(0.35, 0.35, 0.35, 0.85)
-        v1:SetSize(1, rowH - 1)
-        v1:SetPoint("LEFT", row.label, "RIGHT", 1, 0)
-
-        -- Col A (Run A value) -- green if higher on this row
-        row.a = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        row.a:SetPoint("LEFT", v1, "RIGHT", 2, 0)
-        row.a:SetWidth(A_W)
-        if IsSecret(aVal) then
-            row.a:SetFormattedText("%s", aVal)
-        else
-            local aText = tostring(aVal or "")
-            if aIsGreen then
-                aText = "|cFF00FF00" .. aText .. "|r"
-            end
-            row.a:SetFormattedText("%s", aText)
-        end
-
-        -- vertical divider after A
-        local v2 = row:CreateTexture(nil, "OVERLAY")
-        v2:SetColorTexture(0.35, 0.35, 0.35, 0.85)
-        v2:SetSize(1, rowH - 1)
-        v2:SetPoint("LEFT", row.a, "RIGHT", 1, 0)
-
-        -- Col B (Run B value)
-        row.b = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        row.b:SetPoint("LEFT", v2, "RIGHT", 2, 0)
-        row.b:SetWidth(B_W)
-        if IsSecret(bVal) then
-            row.b:SetFormattedText("%s", bVal)
-        else
-            local bText = tostring(bVal or "")
-            if bIsGreen then
-                bText = "|cFF00FF00" .. bText .. "|r"
-            end
-            row.b:SetFormattedText("%s", bText)
-        end
-
-        -- vertical divider after B
-        local v3 = row:CreateTexture(nil, "OVERLAY")
-        v3:SetColorTexture(0.35, 0.35, 0.35, 0.85)
-        v3:SetSize(1, rowH - 1)
-        v3:SetPoint("LEFT", row.b, "RIGHT", 1, 0)
-
-        -- Col C: % Diff
-        row.d = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        row.d:SetPoint("LEFT", v3, "RIGHT", 2, 0)
-        row.d:SetWidth(DIFF_W)
-        row.d:SetFormattedText("%s", tostring(diffVal or ""))
     end
+    row.label:SetJustifyH("LEFT")
+    row.label:SetText(metric or "")
+
+    if isSection then
+        return row, rowH
+    end
+
+    -- vertical divider after label
+    local v1 = row:CreateTexture(nil, "OVERLAY")
+    v1:SetColorTexture(0.35, 0.35, 0.35, 0.85)
+    v1:SetSize(1, rowH - 1)
+    v1:SetPoint("LEFT", row.label, "RIGHT", 1, 0)
+
+    -- Col A (Run A value / header)
+    row.a = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.a:SetPoint("LEFT", v1, "RIGHT", 2, 0)
+    row.a:SetWidth(A_W)
+    row.a:SetJustifyH("CENTER")
+    if IsSecret(aVal) then
+        row.a:SetFormattedText("%s", aVal)
+    else
+        local aText = tostring(aVal or "")
+        if not isHeader and aIsGreen then
+            aText = "|cFF00FF00" .. aText .. "|r"
+        end
+        row.a:SetFormattedText("%s", aText)
+    end
+
+    -- vertical divider after A
+    local v2 = row:CreateTexture(nil, "OVERLAY")
+    v2:SetColorTexture(0.35, 0.35, 0.35, 0.85)
+    v2:SetSize(1, rowH - 1)
+    v2:SetPoint("LEFT", row.a, "RIGHT", 1, 0)
+
+    -- Col B (Run B value / header)
+    row.b = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.b:SetPoint("LEFT", v2, "RIGHT", 2, 0)
+    row.b:SetWidth(B_W)
+    row.b:SetJustifyH("CENTER")
+    if IsSecret(bVal) then
+        row.b:SetFormattedText("%s", bVal)
+    else
+        local bText = tostring(bVal or "")
+        if not isHeader and bIsGreen then
+            bText = "|cFF00FF00" .. bText .. "|r"
+        end
+        row.b:SetFormattedText("%s", bText)
+    end
+
+    -- vertical divider after B
+    local v3 = row:CreateTexture(nil, "OVERLAY")
+    v3:SetColorTexture(0.35, 0.35, 0.35, 0.85)
+    v3:SetSize(1, rowH - 1)
+    v3:SetPoint("LEFT", row.b, "RIGHT", 1, 0)
+
+    -- Col C: % Diff / header
+    row.d = row:CreateFontString(nil, "OVERLAY", isHeader and "GameFontNormalSmall" or "GameFontHighlightSmall")
+    row.d:SetPoint("LEFT", v3, "RIGHT", 2, 0)
+    row.d:SetWidth(DIFF_W)
+    row.d:SetJustifyH("CENTER")
+    row.d:SetFormattedText("%s", tostring(diffVal or ""))
 
     return row, rowH
 end
@@ -923,9 +1009,28 @@ function BuildCompare_RefreshUI()
         end
 
         local function addSection(title, spacingAfter)
-            local r, h = CreateAlignedCompareRow(content, y, true, title, "", "", "", false, false)
+            local key = title:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub(" ", ""):gsub(":", "")
+            local collapsed = false
+            if BuildCompareDB and BuildCompareDB.settings and BuildCompareDB.settings.collapsedSections then
+                collapsed = BuildCompareDB.settings.collapsedSections[key] or false
+            end
+            local displayTitle = title
+            if collapsed then
+                displayTitle = "[+] " .. title
+            else
+                displayTitle = "[-] " .. title
+            end
+            local r, h = CreateAlignedCompareRow(content, y, true, displayTitle, "", "", "", false, false)
             table.insert(rows, r)
             y = y + h + (spacingAfter or 2)
+            r:EnableMouse(true)
+            r:SetScript("OnMouseDown", function()
+                if BuildCompareDB and BuildCompareDB.settings and BuildCompareDB.settings.collapsedSections then
+                    BuildCompareDB.settings.collapsedSections[key] = not collapsed
+                    BuildCompare_RefreshUI()
+                end
+            end)
+            return collapsed
         end
 
         -- Header row with the actual run labels (so user sees which is A vs B)
@@ -933,11 +1038,150 @@ function BuildCompare_RefreshUI()
         table.insert(rows, hr)
         y = y + hh + 12
 
+        -- === Context Section ===
+        local collapsedContext = addSection("|cFFFFD100Context:|r", 6)
+        if not collapsedContext then
+            -- Group summary helper
+            local function BuildCompare_GetGroupSummary(group)
+                if not group or #group == 0 then return "Solo" end
+                local tanks = 0
+                local healers = 0
+                local dps = 0
+                for _, m in ipairs(group) do
+                    if m.role == "TANK" then tanks = tanks + 1
+                    elseif m.role == "HEALER" then healers = healers + 1
+                    elseif m.role == "DAMAGER" then dps = dps + 1
+                    end
+                end
+                return string.format("%dT / %dH / %dD", tanks, healers, dps)
+            end
+
+            -- Group roster tooltip helper
+            local function ShowGroupTooltip(parentRow, colFontString, group)
+                if not group or #group == 0 then return end
+                local f = CreateFrame("Frame", nil, parentRow)
+                f:SetPoint("TOPLEFT", colFontString, "TOPLEFT")
+                f:SetPoint("BOTTOMRIGHT", colFontString, "BOTTOMRIGHT")
+                f:EnableMouse(true)
+                f:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:ClearLines()
+                    GameTooltip:AddLine("Group Composition:", 1, 0.82, 0)
+                    
+                    local colors = RAID_CLASS_COLORS
+                    for _, m in ipairs(group) do
+                        local classColor = colors[m.class] and colors[m.class].colorStr or "FFFFFFFF"
+                        local roleName = m.role == "TANK" and "Tank" or (m.role == "HEALER" and "Healer" or "DPS")
+                        local name = m.isPlayer and ("Player (" .. (m.spec or "Unknown") .. ")") or (m.class or "Unknown")
+                        GameTooltip:AddDoubleLine(
+                            "|c" .. classColor .. name .. "|r",
+                            "|cFFFFFFFF" .. roleName .. "|r"
+                        )
+                    end
+                    GameTooltip:Show()
+                end)
+                f:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            end
+
+            local grpA = BuildCompare_GetGroupSummary(a.group)
+            local grpB = BuildCompare_GetGroupSummary(b.group)
+            addRow("Group", nil, nil, grpA, grpB, "", false, false, 6)
+
+            local groupRowFrame = rows[#rows]
+            ShowGroupTooltip(groupRowFrame, groupRowFrame.a, a.group)
+            ShowGroupTooltip(groupRowFrame, groupRowFrame.b, b.group)
+
+            -- Match Quality (Context Flags)
+            local function BuildCompare_GetGroupSignature(group)
+                if not group then return "" end
+                local sig = {}
+                for _, m in ipairs(group) do
+                    table.insert(sig, (m.role or "") .. ":" .. (m.class or ""))
+                end
+                return table.concat(sig, ";")
+            end
+
+            local confounds = {}
+            local sigA = BuildCompare_GetGroupSignature(a.group)
+            local sigB = BuildCompare_GetGroupSignature(b.group)
+            if sigA ~= sigB then
+                table.insert(confounds, "Different group composition")
+            end
+
+            local keyA = a.keyLevel or 0
+            local keyB = b.keyLevel or 0
+            if keyA ~= keyB then
+                table.insert(confounds, string.format("Different key levels (+%d vs +%d)", keyA, keyB))
+            end
+
+            local deathsA = a.deaths or 0
+            local deathsB = b.deaths or 0
+            if math.abs(deathsA - deathsB) >= 2 then
+                table.insert(confounds, string.format("Significant death gap (%d vs %d)", deathsA, deathsB))
+            end
+
+            local avA, avB = a.avoidableDT or 0, b.avoidableDT or 0
+            local dtA, dtB = a.dt or 0, b.dt or 0
+            local valAvA = BuildCompare_UnboxSecret(avA)
+            local valAvB = BuildCompare_UnboxSecret(avB)
+            local valDtA = BuildCompare_UnboxSecret(dtA)
+            local valDtB = BuildCompare_UnboxSecret(dtB)
+            local pctA = valDtA > 0 and (valAvA / valDtA) * 100 or 0
+            local pctB = valDtB > 0 and (valAvB / valDtB) * 100 or 0
+            if math.abs(pctA - pctB) > 5.0 then
+                table.insert(confounds, string.format("Avoidable DT gap (%.1f%% vs %.1f%%)", pctA, pctB))
+            end
+
+            local txtA, txtB, diffTxt
+            local clean = #confounds == 0
+            if clean then
+                txtA = "Similar"
+                txtB = "Similar"
+                diffTxt = "|cFF00FF00✅ Clean|r"
+            else
+                txtA = "Confounded"
+                txtB = "Confounded"
+                diffTxt = "|cFFFFD100⚠️ Warnings|r"
+            end
+
+            addRow("Match Quality", nil, nil, txtA, txtB, diffTxt, false, false, 18)
+
+            local matchRowFrame = rows[#rows]
+            local function ShowMatchTooltip(colFontString)
+                local f = CreateFrame("Frame", nil, matchRowFrame)
+                f:SetPoint("TOPLEFT", colFontString, "TOPLEFT")
+                f:SetPoint("BOTTOMRIGHT", colFontString, "BOTTOMRIGHT")
+                f:EnableMouse(true)
+                f:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:ClearLines()
+                    if clean then
+                        GameTooltip:AddLine("Clean Comparison:", 0, 1, 0)
+                        GameTooltip:AddLine("Both runs had similar party setups, key levels, death counts, and avoidable damage taken. The performance metrics below are highly comparable and likely reflect your build choices.", 1, 1, 1, true)
+                    else
+                        GameTooltip:AddLine("Confounding Factors:", 1, 0.82, 0)
+                        GameTooltip:AddLine("The following differences between the runs could impact your metrics (DPS, DTPS, HPS) and skew the comparison:", 1, 1, 1, true)
+                        GameTooltip:AddLine(" ")
+                        for _, msg in ipairs(confounds) do
+                            GameTooltip:AddLine("• " .. msg, 1, 0.2, 0.2, true)
+                        end
+                    end
+                    GameTooltip:Show()
+                end)
+                f:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            end
+
+            ShowMatchTooltip(matchRowFrame.a)
+            ShowMatchTooltip(matchRowFrame.b)
+            ShowMatchTooltip(matchRowFrame.d)
+        end
+
         -- === Performance metrics (aligned rows) ===
 
         local function renderTankSection()
             -- Section 1: Tank
-            addSection("|cFFFFD100Tank:|r", 6)
+            local collapsed = addSection("|cFFFFD100Tank:|r", 6)
+            if collapsed then return end
 
             -- DT (total and DTPS, e.g. 470k (13k/s))
             local na, nb = a.dt or 0, b.dt or 0
@@ -958,6 +1202,21 @@ function BuildCompare_RefreshUI()
             local gb = valA > valB
             addRow("DT", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 6)
 
+            -- Avoidable DT %
+            local avA, avB = a.avoidableDT or 0, b.avoidableDT or 0
+            local dtA, dtB = a.dt or 0, b.dt or 0
+            local valAvA = BuildCompare_UnboxSecret(avA)
+            local valAvB = BuildCompare_UnboxSecret(avB)
+            local valDtA = BuildCompare_UnboxSecret(dtA)
+            local valDtB = BuildCompare_UnboxSecret(dtB)
+            local pctA = valDtA > 0 and (valAvA / valDtA) * 100 or 0
+            local pctB = valDtB > 0 and (valAvB / valDtB) * 100 or 0
+            local ta_pct = string.format("%.1f%%", pctA)
+            local tb_pct = string.format("%.1f%%", pctB)
+            local ga_pct = pctB > pctA
+            local gb_pct = pctA > pctB
+            addRow("Avoidable DT %", pctA, pctB, ta_pct, tb_pct, BuildCompare_FormatPercentDiffLowerBetter(pctA, pctB), ga_pct, gb_pct, 6)
+
             -- Def CDs
             local cda = #(a.defensiveCDsUsed or {})
             local cdb = #(b.defensiveCDsUsed or {})
@@ -968,7 +1227,8 @@ function BuildCompare_RefreshUI()
 
         local function renderDmgSection()
             -- Section 2: DMG
-            addSection("|cFFFFD100DMG:|r", 6)
+            local collapsed = addSection("|cFFFFD100DMG:|r", 6)
+            if collapsed then return end
 
             -- Dmg
             local na, nb = a.damage or 0, b.damage or 0
@@ -1008,7 +1268,8 @@ function BuildCompare_RefreshUI()
 
         local function renderHealSection()
             -- Section 3: Heals
-            addSection("|cFFFFD100Heals:|r", 6)
+            local collapsed = addSection("|cFFFFD100Heals:|r", 6)
+            if collapsed then return end
 
             -- Healing
             local na, nb = a.healing or 0, b.healing or 0
@@ -1048,7 +1309,8 @@ function BuildCompare_RefreshUI()
 
         local function renderMiscSection()
             -- Section 4: Misc
-            addSection("|cFFFFD100Misc:|r", 6)
+            local collapsed = addSection("|cFFFFD100Misc:|r", 6)
+            if collapsed then return end
 
             -- Interrupts
             local na, nb = a.interrupts or 0, b.interrupts or 0
@@ -1083,13 +1345,49 @@ function BuildCompare_RefreshUI()
 
         local function renderStatsSection()
             -- Section 5: Stats
-            addSection("|cFFFFD100Stats:|r", 6)
+            local collapsed = addSection("|cFFFFD100Stats:|r", 6)
+            if collapsed then return end
 
             local saStats = a.stats or {}
             local sbStats = b.stats or {}
 
-            -- Strength
-            local na, nb = saStats.strength or 0, sbStats.strength or 0
+            -- Determine player's primary stat (highest base stat wins)
+            local primaryStat = "strength"
+            do
+                local _, str = UnitStat("player", 1)
+                local _, agi = UnitStat("player", 2)
+                local _, int = UnitStat("player", 4)
+                str = str or 0; agi = agi or 0; int = int or 0
+                if agi > str and agi > int then
+                    primaryStat = "agility"
+                elseif int > str and int > agi then
+                    primaryStat = "intellect"
+                end
+            end
+
+            -- Determine if player is tanking
+            local isTank = false
+            do
+                local specIdx = GetSpecialization and GetSpecialization()
+                if specIdx then
+                    local role = GetSpecializationRole(specIdx)
+                    isTank = (role == "TANK")
+                end
+            end
+
+            -- Item Level
+            local na, nb = saStats.ilvl or 0, sbStats.ilvl or 0
+            local ta = string.format("%.1f", na)
+            local tb = string.format("%.1f", nb)
+            local valA = BuildCompare_UnboxSecret(na)
+            local valB = BuildCompare_UnboxSecret(nb)
+            local ga = valA > valB
+            local gb = valB > valA
+            addRow("Item Level", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+
+            -- Strength (only if primary stat)
+            if primaryStat == "strength" then
+            na, nb = saStats.strength or 0, sbStats.strength or 0
             local ta = BuildCompare_FormatNumber(na)
             local tb = BuildCompare_FormatNumber(nb)
             local valA = BuildCompare_UnboxSecret(na)
@@ -1097,6 +1395,7 @@ function BuildCompare_RefreshUI()
             local ga = valA > valB
             local gb = valB > valA
             addRow("Strength", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+            end
 
             -- Stamina
             na, nb = saStats.stamina or 0, sbStats.stamina or 0
@@ -1108,7 +1407,8 @@ function BuildCompare_RefreshUI()
             gb = valB > valA
             addRow("Stamina", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
 
-            -- Agility
+            -- Agility (only if primary stat)
+            if primaryStat == "agility" then
             na, nb = saStats.agility or 0, sbStats.agility or 0
             ta = BuildCompare_FormatNumber(na)
             tb = BuildCompare_FormatNumber(nb)
@@ -1117,8 +1417,10 @@ function BuildCompare_RefreshUI()
             ga = valA > valB
             gb = valB > valA
             addRow("Agility", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+            end
 
-            -- Intellect
+            -- Intellect (only if primary stat)
+            if primaryStat == "intellect" then
             na, nb = saStats.intellect or 0, sbStats.intellect or 0
             ta = BuildCompare_FormatNumber(na)
             tb = BuildCompare_FormatNumber(nb)
@@ -1127,6 +1429,7 @@ function BuildCompare_RefreshUI()
             ga = valA > valB
             gb = valB > valA
             addRow("Intellect", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
+            end
 
             -- Mastery
             local masteryPctA = saStats.masteryPct or 0
@@ -1176,7 +1479,8 @@ function BuildCompare_RefreshUI()
             gb = valB > valA
             addRow("Vers", versPctA, versPctB, ta, tb, BuildCompare_FormatPercentDiffNeutral(versPctA, versPctB), ga, gb, 6)
 
-            -- Dodge
+            -- Dodge (tanks only)
+            if isTank then
             na, nb = saStats.dodgePct or 0, sbStats.dodgePct or 0
             if IsSecret(na) or IsSecret(nb) then
                 ta = "Pending"
@@ -1191,7 +1495,7 @@ function BuildCompare_RefreshUI()
             gb = valB > valA
             addRow("Dodge", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
 
-            -- Parry
+            -- Parry (tanks only)
             na, nb = saStats.parryPct or 0, sbStats.parryPct or 0
             if IsSecret(na) or IsSecret(nb) then
                 ta = "Pending"
@@ -1206,7 +1510,8 @@ function BuildCompare_RefreshUI()
             gb = valB > valA
             addRow("Parry", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 6)
 
-            -- Block
+            -- Block (tanks with shields only)
+            if GetBlockChance and GetBlockChance() > 0 then
             na, nb = saStats.blockPct or 0, sbStats.blockPct or 0
             if IsSecret(na) or IsSecret(nb) then
                 ta = "Pending"
@@ -1220,11 +1525,14 @@ function BuildCompare_RefreshUI()
             ga = valA > valB
             gb = valB > valA
             addRow("Block", na, nb, ta, tb, BuildCompare_FormatPercentDiffNeutral(na, nb), ga, gb, 18)
+            end -- block check
+            end -- isTank check
         end
 
         local function renderBuffsSection()
             -- Section 6: Buffs
-            addSection("|cFFFFD100Buffs:|r", 6)
+            local collapsedBuffs = addSection("|cFFFFD100Buffs:|r", 6)
+            if collapsedBuffs then return end
 
             local aUptimes = a.buffUptimes or {}
             local bUptimes = b.buffUptimes or {}
@@ -1330,25 +1638,66 @@ function BuildCompare_RefreshUI()
                 return name1 < name2
             end)
 
+            local cooldownSpells = {}
+            local procSpells = {}
             for _, spellID in ipairs(sortedSpells) do
-                local uptimeA = getUptime(aUptimes, spellID)
-                local uptimeB = getUptime(bUptimes, spellID)
-                if uptimeA > 1.0 or uptimeB > 1.0 then
-                    local spellName = GetSpellName(spellID)
-                    local specTxtA = string.format("%.1f%%", uptimeA)
-                    local specTxtB = string.format("%.1f%%", uptimeB)
-                    local diffVal = uptimeB - uptimeA
-                    local diffTxt
-                    if diffVal > 0.05 then
-                        diffTxt = string.format("|cFF00FF00+%.1f%%|r", diffVal)
-                    elseif diffVal < -0.05 then
-                        diffTxt = string.format("|cFFFF3333-%.1f%%|r", math.abs(diffVal))
-                    else
-                        diffTxt = "|cFFFFFFFF0.0%|r"
+                local numID = tonumber(spellID)
+                if BuildCompare_IsActiveCooldown(numID or spellID) then
+                    table.insert(cooldownSpells, spellID)
+                else
+                    table.insert(procSpells, spellID)
+                end
+            end
+
+            -- Render Cooldowns
+            if #cooldownSpells > 0 then
+                addSection("  |cFFFFD100Cooldowns:|r", 6)
+                for _, spellID in ipairs(cooldownSpells) do
+                    local uptimeA = getUptime(aUptimes, spellID)
+                    local uptimeB = getUptime(bUptimes, spellID)
+                    if uptimeA > 1.0 or uptimeB > 1.0 then
+                        local spellName = GetSpellName(spellID)
+                        local specTxtA = string.format("%.1f%%", uptimeA)
+                        local specTxtB = string.format("%.1f%%", uptimeB)
+                        local diffVal = uptimeB - uptimeA
+                        local diffTxt
+                        if diffVal > 0.05 then
+                            diffTxt = string.format("|cFF00FF00+%.1f%%|r", diffVal)
+                        elseif diffVal < -0.05 then
+                            diffTxt = string.format("|cFFFF3333-%.1f%%|r", math.abs(diffVal))
+                        else
+                            diffTxt = "|cFFFFFFFF0.0%|r"
+                        end
+                        local ga = uptimeA > uptimeB
+                        local gb = uptimeB > uptimeA
+                        addRow("  " .. spellName, uptimeA, uptimeB, specTxtA, specTxtB, diffTxt, ga, gb, 6)
                     end
-                    local ga = uptimeA > uptimeB
-                    local gb = uptimeB > uptimeA
-                    addRow(spellName, uptimeA, uptimeB, specTxtA, specTxtB, diffTxt, ga, gb, 6)
+                end
+            end
+
+            -- Render Procs & Passives
+            if #procSpells > 0 then
+                addSection("  |cFFFFD100Procs & Passives:|r", 6)
+                for _, spellID in ipairs(procSpells) do
+                    local uptimeA = getUptime(aUptimes, spellID)
+                    local uptimeB = getUptime(bUptimes, spellID)
+                    if uptimeA > 1.0 or uptimeB > 1.0 then
+                        local spellName = GetSpellName(spellID)
+                        local specTxtA = string.format("%.1f%%", uptimeA)
+                        local specTxtB = string.format("%.1f%%", uptimeB)
+                        local diffVal = uptimeB - uptimeA
+                        local diffTxt
+                        if diffVal > 0.05 then
+                            diffTxt = string.format("|cFF00FF00+%.1f%%|r", diffVal)
+                        elseif diffVal < -0.05 then
+                            diffTxt = string.format("|cFFFF3333-%.1f%%|r", math.abs(diffVal))
+                        else
+                            diffTxt = "|cFFFFFFFF0.0%|r"
+                        end
+                        local ga = uptimeA > uptimeB
+                        local gb = uptimeB > uptimeA
+                        addRow("  " .. spellName, uptimeA, uptimeB, specTxtA, specTxtB, diffTxt, ga, gb, 6)
+                    end
                 end
             end
         end
@@ -1652,3 +2001,110 @@ end
 
 -- Expose mini
 _G.BuildCompare_ShowMiniCurrent = BuildCompare_ShowMiniCurrent
+
+-- ==================== MINIMAP BUTTON ====================
+-- Draggable circular icon on the minimap ring.
+-- Left-click: toggle main comparison UI.
+-- Right-click: toggle live combat mini-overlay.
+-- Drag: repositions the button around the minimap edge.
+
+local minimapBtn = nil
+
+function BuildCompare_CreateMinimapButton()
+    if minimapBtn then return end
+
+    minimapBtn = CreateFrame("Button", "BuildCompareMinimapBtn", Minimap)
+    minimapBtn:SetSize(32, 32)
+    minimapBtn:SetFrameStrata("MEDIUM")
+    minimapBtn:SetFrameLevel(8)
+    minimapBtn:SetClampedToScreen(false)
+
+    -- Circular backdrop using the standard WoW tracking border
+    local backdrop = minimapBtn:CreateTexture(nil, "BACKGROUND")
+    backdrop:SetSize(32, 32)
+    backdrop:SetPoint("CENTER")
+    backdrop:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+
+    -- Icon texture (book / journal icon)
+    local icon = minimapBtn:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(20, 20)
+    icon:SetPoint("CENTER", 0, 1)
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
+    -- Apply circular mask so the icon is clipped to a circle
+    icon:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+
+    -- Hover highlight
+    local hl = minimapBtn:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetSize(32, 32)
+    hl:SetPoint("CENTER")
+    hl:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+
+    -- Position helper
+    local function UpdateMinimapButtonPosition()
+        local angle = (BuildCompareDB and BuildCompareDB.settings and BuildCompareDB.settings.minimapAngle) or 45
+        local rad = math.rad(angle)
+        local x = 80 * math.cos(rad)
+        local y = 80 * math.sin(rad)
+        minimapBtn:SetPoint("CENTER", Minimap, "CENTER", x, y)
+    end
+    UpdateMinimapButtonPosition()
+
+    -- Drag handling: update angle from cursor position around minimap center
+    minimapBtn:RegisterForDrag("LeftButton")
+    minimapBtn:SetMovable(false) -- we do manual angle-based positioning
+    local isDragging = false
+
+    minimapBtn:SetScript("OnDragStart", function(self)
+        isDragging = true
+        self:SetScript("OnUpdate", function()
+            local cx, cy = Minimap:GetCenter()
+            local mx, my = GetCursorPosition()
+            local scale = UIParent:GetEffectiveScale()
+            mx, my = mx / scale, my / scale
+            local angle = math.deg(math.atan2(my - cy, mx - cx))
+            if BuildCompareDB and BuildCompareDB.settings then
+                BuildCompareDB.settings.minimapAngle = angle
+            end
+            UpdateMinimapButtonPosition()
+        end)
+    end)
+
+    minimapBtn:SetScript("OnDragStop", function(self)
+        isDragging = false
+        self:SetScript("OnUpdate", nil)
+    end)
+
+    -- Left click: toggle main UI
+    minimapBtn:SetScript("OnClick", function(self, button)
+        if button == "LeftButton" then
+            if BuildCompareFrame and BuildCompareFrame:IsShown() then
+                BuildCompareFrame:Hide()
+            else
+                if _G.BuildCompare_ShowUI then _G.BuildCompare_ShowUI() end
+            end
+        elseif button == "RightButton" then
+            if miniFrame and miniFrame:IsShown() then
+                miniFrame:Hide()
+            else
+                if _G.BuildCompare_ShowMiniCurrent then _G.BuildCompare_ShowMiniCurrent() end
+            end
+        end
+    end)
+    minimapBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+    -- Tooltip
+    minimapBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine("BuildCompare", 1, 0.82, 0)
+        GameTooltip:AddLine("Left-click: Toggle comparison UI", 1, 1, 1)
+        GameTooltip:AddLine("Right-click: Toggle live overlay", 1, 1, 1)
+        GameTooltip:AddLine("Drag: Reposition button", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    minimapBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+end
+
+_G.BuildCompare_CreateMinimapButton = BuildCompare_CreateMinimapButton

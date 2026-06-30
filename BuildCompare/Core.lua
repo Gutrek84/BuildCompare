@@ -152,33 +152,6 @@ local function IsSecret(val)
     return issecretvalue(val)
 end
 
-local function GetLatestSessionID()
-    if C_DamageMeter and C_DamageMeter.GetAvailableCombatSessions then
-        local sessions = C_DamageMeter.GetAvailableCombatSessions()
-        if sessions and #sessions > 0 then
-            return SafeUnbox( sessions[#sessions].sessionID )
-        end
-    end
-    return nil
-end
-
-local function SafeDiv(a, b)
-    if IsSecret(a) or IsSecret(b) then
-        return 0
-    end
-    return b > 0 and (a / b) or 0
-end
-
-local function GetRate(rate, total, duration)
-    if IsSecret(rate) then
-        return rate
-    end
-    if rate and rate ~= 0 then
-        return rate
-    end
-    return SafeDiv(total, duration)
-end
-
 -- Taint-safe unbox/equal/key wrappers. Use everywhere a meter session/dur or aura numeric ID is used for decision, compare, or key.
 local function SafeUnbox(val)
     if not val then return 0 end
@@ -187,6 +160,7 @@ local function SafeUnbox(val)
     end
     return val
 end
+
 
 local function SafeSessionIDsEqual(a, b)
     if a == nil and b == nil then return true end
@@ -216,6 +190,33 @@ local function SafeAuraKeyDelete(tbl, rawKey)
     if not tbl then return end
     local k = tostring(rawKey or "")
     tbl[k] = nil
+end
+
+local function SafeDiv(a, b)
+    if IsSecret(a) or IsSecret(b) then
+        return 0
+    end
+    return b > 0 and (a / b) or 0
+end
+
+local function GetRate(rate, total, duration)
+    if IsSecret(rate) then
+        return rate
+    end
+    if rate and rate ~= 0 then
+        return rate
+    end
+    return SafeDiv(total, duration)
+end
+
+local function GetLatestSessionID()
+    if C_DamageMeter and C_DamageMeter.GetAvailableCombatSessions then
+        local sessions = C_DamageMeter.GetAvailableCombatSessions()
+        if sessions and #sessions > 0 then
+            return sessions[#sessions].sessionID
+        end
+    end
+    return nil
 end
 
 -- Slash command
@@ -436,6 +437,9 @@ local function SnapshotPlayerStats()
     stats.agility = SafeUnbox( UnitStat("player", 2) or 0 )
     stats.intellect = SafeUnbox( UnitStat("player", 4) or 0 )
 
+    local _, equippedItemLevel = GetAverageItemLevel()
+    stats.ilvl = SafeUnbox(equippedItemLevel or 0)
+
     stats.class = UnitClass("player") or "Unknown"
     
     stats.spec = "None"
@@ -494,7 +498,8 @@ local function ShouldTrackAura(aura)
     if aura.isHelpful and (MAJOR_EXTERNAL_BUFFS[spellID] or RAID_BUFFS[spellID]) then
         return true
     end
-    return aura.sourceUnit == "player" and aura.duration and aura.duration > 0
+    local duration = SafeUnbox(aura.duration)
+    return aura.isFromPlayerOrPlayerPet and duration and duration > 0
 end
 
 local auraTrackingSuspended = false
@@ -644,9 +649,53 @@ local function StartActiveRun(buildLabel)
     if not IsTrackableContent() then return end
 
     local success, instanceName, diffName, keyLevel = IsTrackableContent()
+    
+    local group = {}
+    local numMembers = GetNumGroupMembers()
+    if numMembers > 0 then
+        local prefix = IsInRaid() and "raid" or "party"
+        local limit = IsInRaid() and numMembers or (numMembers - 1)
+        
+        -- Player
+        local pSpec = "Unknown"
+        if GetSpecialization and GetSpecialization() then
+            local _, specName = GetSpecializationInfo(GetSpecialization())
+            pSpec = specName or "Unknown"
+        end
+        table.insert(group, {
+            class = select(2, UnitClass("player")),
+            role = UnitGroupRolesAssigned("player") or "NONE",
+            spec = pSpec,
+            isPlayer = true,
+        })
+        
+        -- Members
+        for i = 1, limit do
+            local unit = prefix .. i
+            if UnitExists(unit) then
+                table.insert(group, {
+                    class = select(2, UnitClass(unit)),
+                    role = UnitGroupRolesAssigned(unit) or "NONE",
+                    spec = "Unknown",
+                })
+            end
+        end
+    end
+    -- Sort group: Tank first, then Healer, then DPS (alphabetically by class within roles)
+    table.sort(group, function(x, y)
+        local roleOrder = { TANK = 1, HEALER = 2, DAMAGER = 3, NONE = 4 }
+        local ox = roleOrder[x.role] or 4
+        local oy = roleOrder[y.role] or 4
+        if ox ~= oy then return ox < oy end
+        return (x.class or "") < (y.class or "")
+    end)
+
     activeRun = {
         startTime = time(),
         startGetTime = GetTime(),
+        initialSessionID = GetLatestSessionID(),
+        startedInCombat = InCombatLockdown(),
+        hadCombat = InCombatLockdown(),
         instance = instanceName or "Unknown",
         difficulty = diffName or "Unknown",
         keyLevel = keyLevel or 0,
@@ -664,6 +713,7 @@ local function StartActiveRun(buildLabel)
         interrupts = 0,
         dispels = 0,
         deaths = 0,
+        group = group,
     }
     ReconcileActiveAuras()
     CheckWeaponEnchants()
@@ -685,10 +735,53 @@ local function StartCustomRun()
             local eb = self.EditBox or _G[self:GetName().."EditBox"]
             local label = (eb and eb:GetText()) or "Custom Run"
             if label == "" then label = "Custom Run" end
+
+            local group = {}
+            local numMembers = GetNumGroupMembers()
+            if numMembers > 0 then
+                local prefix = IsInRaid() and "raid" or "party"
+                local limit = IsInRaid() and numMembers or (numMembers - 1)
+                
+                -- Player
+                local pSpec = "Unknown"
+                if GetSpecialization and GetSpecialization() then
+                    local _, specName = GetSpecializationInfo(GetSpecialization())
+                    pSpec = specName or "Unknown"
+                end
+                table.insert(group, {
+                    class = select(2, UnitClass("player")),
+                    role = UnitGroupRolesAssigned("player") or "NONE",
+                    spec = pSpec,
+                    isPlayer = true,
+                })
+                
+                -- Members
+                for i = 1, limit do
+                    local unit = prefix .. i
+                    if UnitExists(unit) then
+                        table.insert(group, {
+                            class = select(2, UnitClass(unit)),
+                            role = UnitGroupRolesAssigned(unit) or "NONE",
+                            spec = "Unknown",
+                        })
+                    end
+                end
+            end
+            -- Sort group: Tank first, then Healer, then DPS (alphabetically by class within roles)
+            table.sort(group, function(x, y)
+                local roleOrder = { TANK = 1, HEALER = 2, DAMAGER = 3, NONE = 4 }
+                local ox = roleOrder[x.role] or 4
+                local oy = roleOrder[y.role] or 4
+                if ox ~= oy then return ox < oy end
+                return (x.class or "") < (y.class or "")
+            end)
+
             activeRun = {
                 startTime = time(),
                 startGetTime = GetTime(),
                 initialSessionID = GetLatestSessionID(),
+                startedInCombat = InCombatLockdown(),
+                hadCombat = InCombatLockdown(),
                 instance = "Custom",
                 difficulty = "Custom",
                 keyLevel = 0,
@@ -707,6 +800,7 @@ local function StartCustomRun()
                 interrupts = 0,
                 dispels = 0,
                 deaths = 0,
+                group = group,
             }
             ReconcileActiveAuras()
             CheckWeaponEnchants()
@@ -719,6 +813,20 @@ local function StartCustomRun()
     }
     StaticPopup_Show("BUILDCOMPARE_CUSTOM_LABEL")
 end
+
+StaticPopupDialogs["BUILDCOMPARE_CONFIRM_DELETE"] = {
+    text = "Are you sure you want to delete the run '%s'?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, run)
+        if run and run.id then
+            BuildCompare_DeleteRun(run.id)
+        end
+    end,
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
+}
 
 local function StopCustomTracking()
     if activeRun and activeRun.runType == "custom" then
@@ -770,7 +878,7 @@ end
 -- We prefer the most recent session whose durationSeconds looks like a single pull (not the multi-hour Overall).
 -- This lets us lock *all* metrics (DT, Healing, AvoidableDT, etc.) to the exact same combat session,
 -- preventing the per-type fallback (Current for DT but Overall for Abs/Heal) that was causing mixed numbers.
-local function GetBestSessionIDForCurrentPull(initialSessionID)
+local function GetBestSessionIDForCurrentPull(initialSessionID, startedInCombat, hadCombat)
     if not C_DamageMeter or not C_DamageMeter.GetAvailableCombatSessions then
         return nil
     end
@@ -778,8 +886,11 @@ local function GetBestSessionIDForCurrentPull(initialSessionID)
     if #sessions == 0 then return nil end
 
     local latest = sessions[#sessions]
+
     if latest and SafeSessionIDsEqual(latest.sessionID, initialSessionID) then
-        -- No new combat occurred since starting the custom run
+        if startedInCombat or hadCombat then
+            return latest.sessionID
+        end
         return nil
     end
 
@@ -847,7 +958,7 @@ end
 -- Returns summary (with hasActivity) or nil.
 -- preferCurrent: when true (non-M+ / solo dummy / short boss), we try to lock to a specific recent short sessionID
 -- (instead of just preferring Current type). This ensures DT, Heal, AvoidableDT etc. all come from the *same* pull.
-local function GetNativeMeterData(preferCurrent, initialSessionID)
+local function GetNativeMeterData(preferCurrent, initialSessionID, startedInCombat, hadCombat)
     if not C_DamageMeter or not C_DamageMeter.IsDamageMeterAvailable then
         return nil
     end
@@ -862,7 +973,7 @@ local function GetNativeMeterData(preferCurrent, initialSessionID)
     -- For short content, try to get one consistent sessionID from the available list.
     -- Then we'll query every metric type from that exact ID.
     -- Note: lockedSessionID may be a secret value (from C_DamageMeter); it is ONLY passed raw to C_DamageMeter.GetCombatSessionFromID etc in the preferCurrent path. No comparisons or table key use on it here (Safe* used upstream in GetBest).
-    local lockedSessionID = preferCurrent and GetBestSessionIDForCurrentPull(initialSessionID) or nil
+    local lockedSessionID = preferCurrent and GetBestSessionIDForCurrentPull(initialSessionID, startedInCombat, hadCombat) or nil
 
     local function fetchForType(dmType)
         if preferCurrent then
@@ -971,13 +1082,13 @@ end
 _G.GetNativeMeterData = GetNativeMeterData
 
 -- Retrieve combat metrics summary. Pure native C_DamageMeter only (streamlined, no external addons).
-local function GetPlayerMeterSummary(isOverall, runStartTime, initialSessionID)
+local function GetPlayerMeterSummary(isOverall, runStartTime, initialSessionID, startedInCombat, hadCombat)
     -- For M+ (keyLevel > 0) we want the Overall full-run numbers (the type-based Overall is usually correct).
     -- For dummy/solo/short content we compute a lockedSessionID (most recent short session from GetAvailableCombatSessions)
     -- and query *every* metric type from that exact same sessionID. This prevents the previous problem where
     -- DT might come from Current but Healing/AvoidableDT fell back to a huge cumulative Overall (now prevented by locked sessionID for short runs).
     local preferCurrent = not isOverall
-    local native = GetNativeMeterData(preferCurrent, initialSessionID)
+    local native = GetNativeMeterData(preferCurrent, initialSessionID, startedInCombat, hadCombat)
     if native then
         return native
     end
@@ -1013,6 +1124,8 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         startTime = recordSource.startTime,
         startGetTime = recordSource.startGetTime,
         initialSessionID = recordSource.initialSessionID,
+        startedInCombat = recordSource.startedInCombat,
+        hadCombat = recordSource.hadCombat,
         duration = recordSource.duration,
         instance = recordSource.instance,
         difficulty = recordSource.difficulty,
@@ -1036,6 +1149,7 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         deaths = recordSource.deaths,
         buffDurations = recordSource.buffDurations,
         activeAuras = recordSource.activeAuras,
+        group = recordSource.group,
     }
 
     -- Clear active run and combat segment immediately to allow new runs to start
@@ -1069,7 +1183,7 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
 
         -- Fetch the combat summary directly from the built-in C_DamageMeter (pure WoW, no external addons)
         local isOverall = (capturedSource.keyLevel and capturedSource.keyLevel > 0)
-        local meterSummary = GetPlayerMeterSummary(isOverall, capturedSource.startTime, capturedSource.initialSessionID)
+        local meterSummary = GetPlayerMeterSummary(isOverall, capturedSource.startTime, capturedSource.initialSessionID, capturedSource.startedInCombat, capturedSource.hadCombat)
         if meterSummary then
             dt = meterSummary.dt or dt
             dtps = meterSummary.dtps or dtps
@@ -1150,6 +1264,7 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
             healingCDsUsed = healingCDsUsed,
             buffUptimes = buffUptimes,
             meterSessionId = isOverall and "overall" or "current",
+            group = capturedSource.group,
         }
 
         -- Classify the run for the new scoped UI (mythic full, raid boss, or custom)
@@ -1253,6 +1368,9 @@ local function OnCombatEvent(self, event, ...)
         if not playerGUID then
             playerGUID = UnitGUID("player")
         end
+        if activeRun then
+            activeRun.hadCombat = true
+        end
         -- No auto start for dummies, delves, outdoor or raid trash anymore.
         -- Only M+ and raid bosses auto-start via their specific events.
         -- Custom runs are started manually via UI button.
@@ -1266,6 +1384,9 @@ local function OnCombatEvent(self, event, ...)
             BuildCompare_LastCombatSegment = {
                 startTime = activeRun.startTime,
                 startGetTime = activeRun.startGetTime,
+                initialSessionID = activeRun.initialSessionID,
+                startedInCombat = activeRun.startedInCombat,
+                hadCombat = activeRun.hadCombat,
                 duration = duration,
                 instance = activeRun.instance,
                 difficulty = activeRun.difficulty,
@@ -1289,6 +1410,7 @@ local function OnCombatEvent(self, event, ...)
                 deaths = activeRun.deaths,
                 buffDurations = activeRun.buffDurations,
                 activeAuras = activeRun.activeAuras,
+                group = activeRun.group,
             }
         end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -1393,6 +1515,12 @@ f:SetScript("OnEvent", function(self, event, arg1, ...)
         CharDB = BuildCompareCharDB
         DB.runs = DB.runs or {}
         CharDB.runs = CharDB.runs or {}
+        BuildCompareDB.settings = BuildCompareDB.settings or {}
+        BuildCompareDB.settings.collapsedSections = BuildCompareDB.settings.collapsedSections or {}
+        BuildCompareDB.settings.minimapAngle = BuildCompareDB.settings.minimapAngle or 45
+        if BuildCompare_CreateMinimapButton then
+            BuildCompare_CreateMinimapButton()
+        end
     else
         OnCombatEvent(self, event, arg1, ...)
     end
@@ -1411,3 +1539,79 @@ _G.StopCustomTracking = StopCustomTracking
 
 -- Expose for mini current-run overlay (live DT/AvDT/Heal + defensive CD count during active run)
 _G.BuildCompare_GetActiveRun = function() return activeRun end
+
+function BuildCompare_IsActiveCooldown(spellID)
+    local numID = tonumber(spellID)
+    if not numID then return false end
+    return (DEFENSIVE_CDS[numID] ~= nil) or (DPS_CDS[numID] ~= nil) or (HEALING_CDS[numID] ~= nil) or (MAJOR_EXTERNAL_BUFFS[numID] ~= nil)
+end
+
+function BuildCompare_DeleteRun(runID)
+    if not runID then return end
+    if DB and DB.runs then
+        for i = #DB.runs, 1, -1 do
+            if DB.runs[i].id == runID then
+                table.remove(DB.runs, i)
+            end
+        end
+    end
+    if CharDB and CharDB.runs then
+        for i = #CharDB.runs, 1, -1 do
+            if CharDB.runs[i].id == runID then
+                table.remove(CharDB.runs, i)
+            end
+        end
+    end
+    Print("Run deleted successfully.")
+    if BuildCompareFrame and BuildCompareFrame:IsShown() then
+        BuildCompare_RefreshUI()
+    end
+end
+_G.BuildCompare_DeleteRun = BuildCompare_DeleteRun
+
+local function BuildCompare_SaveRunNote(runID, note)
+    if not runID then return end
+    if DB and DB.runs then
+        for i = 1, #DB.runs do
+            if DB.runs[i].id == runID then
+                DB.runs[i].note = note
+            end
+        end
+    end
+    if CharDB and CharDB.runs then
+        for i = 1, #CharDB.runs do
+            if CharDB.runs[i].id == runID then
+                CharDB.runs[i].note = note
+            end
+        end
+    end
+    Print("Note saved successfully.")
+    if BuildCompareFrame and BuildCompareFrame:IsShown() then
+        BuildCompare_RefreshUI()
+    end
+end
+_G.BuildCompare_SaveRunNote = BuildCompare_SaveRunNote
+
+StaticPopupDialogs["BUILDCOMPARE_EDIT_NOTE"] = {
+    text = "Enter note for this run:",
+    button1 = "Save",
+    button2 = "Cancel",
+    hasEditBox = 1,
+    OnShow = function(self, run)
+        local eb = self.EditBox or _G[self:GetName().."EditBox"]
+        if eb then
+            eb:SetText(run and run.note or "")
+            eb:SetFocus()
+            eb:HighlightText()
+        end
+    end,
+    OnAccept = function(self, run)
+        local eb = self.EditBox or _G[self:GetName().."EditBox"]
+        local note = eb and eb:GetText() or ""
+        BuildCompare_SaveRunNote(run.id, note)
+    end,
+    EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
+}
