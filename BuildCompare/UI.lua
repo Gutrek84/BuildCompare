@@ -792,7 +792,7 @@ local A_W = 106
 local B_W = 106
 local DIFF_W = 106
 
-local function CreateAlignedCompareRow(parent, y, isHeader, metric, aVal, bVal, diffVal, aIsGreen, bIsGreen)
+local function CreateAlignedCompareRow(parent, y, isHeader, metric, aVal, bVal, diffVal, aIsGreen, bIsGreen, isCollapsed)
     local isSection = isHeader and (not aVal or aVal == "") and (not bVal or bVal == "")
     local rowH = isHeader and 17 or 14
     local row = CreateFrame("Frame", nil, parent)
@@ -802,10 +802,36 @@ local function CreateAlignedCompareRow(parent, y, isHeader, metric, aVal, bVal, 
 
     -- Metric label column
     row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    row.label:SetPoint("LEFT", 2, 0)
     if isSection then
-        row.label:SetWidth(LABEL_W + A_W + B_W + DIFF_W + 12)
+        row.label:SetPoint("LEFT", 22, 0)
+        row.label:SetWidth(LABEL_W + A_W + B_W + DIFF_W + 12 - 20)
+
+        -- Dark square background
+        row.btnBg = row:CreateTexture(nil, "BACKGROUND")
+        row.btnBg:SetSize(14, 14)
+        row.btnBg:SetPoint("LEFT", 2, 0)
+        row.btnBg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+
+        -- 1px Border (using a slightly larger texture behind it)
+        row.btnBorder = row:CreateTexture(nil, "BACKGROUND", nil, -1)
+        row.btnBorder:SetSize(16, 16)
+        row.btnBorder:SetPoint("CENTER", row.btnBg, "CENTER")
+        row.btnBorder:SetColorTexture(0.4, 0.4, 0.4, 1)
+
+        -- Yellow Arrow
+        row.arrow = row:CreateTexture(nil, "OVERLAY")
+        row.arrow:SetSize(10, 10)
+        row.arrow:SetPoint("CENTER", row.btnBg, "CENTER")
+        row.arrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
+        row.arrow:SetVertexColor(1, 0.82, 0) -- Gold/Yellow
+
+        if isCollapsed then
+            row.arrow:SetRotation(0) -- Point Right
+        else
+            row.arrow:SetRotation(-math.pi / 2) -- Point Down
+        end
     else
+        row.label:SetPoint("LEFT", 2, 0)
         row.label:SetWidth(LABEL_W)
     end
     row.label:SetJustifyH("LEFT")
@@ -1015,12 +1041,7 @@ function BuildCompare_RefreshUI()
                 collapsed = BuildCompareDB.settings.collapsedSections[key] or false
             end
             local displayTitle = title
-            if collapsed then
-                displayTitle = "[+] " .. title
-            else
-                displayTitle = "[-] " .. title
-            end
-            local r, h = CreateAlignedCompareRow(content, y, true, displayTitle, "", "", "", false, false)
+            local r, h = CreateAlignedCompareRow(content, y, true, displayTitle, "", "", "", false, false, collapsed)
             table.insert(rows, r)
             y = y + h + (spacingAfter or 2)
             r:EnableMouse(true)
@@ -1743,7 +1764,7 @@ function BuildCompare_RefreshUI()
         if BuildCompare_TalentDiff then
             local onlyA, onlyB = BuildCompare_TalentDiff(a.talents, b.talents)
             if #onlyA > 0 or #onlyB > 0 then
-                table.insert(compareRows, CreateAlignedCompareRow(content, y, true, "Unique Talents", "", "", ""))
+                table.insert(compareRows, CreateAlignedCompareRow(content, y, true, "Unique Talents", "", "", "", false, false, false))
                 y = y + 17
                 
                 local maxCount = math.max(#onlyA, #onlyB)
