@@ -286,7 +286,7 @@ local function BuildCompare_DebugMeter()
             -- Also show direct GetCombatSessionFromType example (Overall + DamageTaken)
             if Enum and Enum.DamageMeterSessionType and Enum.DamageMeterType and C_DamageMeter.GetCombatSessionFromType then
                 local dtSess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromType, nil, Enum.DamageMeterSessionType.Overall, Enum.DamageMeterType.DamageTaken)
-                local dSess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromType, nil, Enum.DamageMeterSessionType.Overall, Enum.DamageMeterType.Damage)
+                local dSess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromType, nil, Enum.DamageMeterSessionType.Overall, Enum.DamageMeterType.DamageDone)
                 if dtSess then
                     Print("Direct Overall+DT session: totalAmount=" .. SafeFormatVal(dtSess.totalAmount) .. " sources=" .. #(dtSess.combatSources or {}))
                 end
@@ -410,7 +410,7 @@ local function SnapshotPlayerStats()
     ok, value = pcall(GetCombatRating, CR_VERSATILITY_DAMAGE_DONE)
     stats.vers = SafeUnbox( ok and value or 0 )
 
-    stats.masteryPct = SafeUnbox( GetMastery() or 0 )
+    stats.masteryPct = SafeUnbox( GetMasteryEffect() or 0 )
     
     -- School 1 to 7 spell crit check combined with standard crit chance
     local maxCrit = SafeUnbox( tonumber(GetCritChance()) or 0 )
@@ -435,7 +435,6 @@ local function SnapshotPlayerStats()
     stats.stamina = SafeUnbox( BuildCompare_SafeCall(UnitStat, 0, "player", 3) or 0 )
     stats.agility = SafeUnbox( BuildCompare_SafeCall(UnitStat, 0, "player", 2) or 0 )
     stats.intellect = SafeUnbox( BuildCompare_SafeCall(UnitStat, 0, "player", 4) or 0 )
-    stats.mastery = SafeUnbox( GetMasteryEffect() or 0 )
     local _, equippedItemLevel = GetAverageItemLevel()
     stats.ilvl = SafeUnbox(equippedItemLevel or 0)
 
@@ -472,6 +471,33 @@ statCacheFrame:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
+local ACTIVE_MITIGATION_SPELLS = {
+    [53600] = true, -- Shield of the Righteous (Paladin)
+    [192081] = true, -- Ironfur (Druid)
+    [203819] = true, -- Demon Spikes (DH)
+    [190456] = true, -- Ignore Pain (Warrior)
+    [2565] = true, -- Shield Block (Warrior)
+    [195181] = true, -- Bone Shield (DK)
+    [322507] = true, -- Celestial Brew (Monk)
+}
+_G.BuildCompare_ACTIVE_MITIGATION = ACTIVE_MITIGATION_SPELLS
+
+local EXTERNAL_BUFFS = {
+    [10060] = true, -- Power Infusion
+    [2825] = true, -- Bloodlust
+    [32182] = true, -- Heroism
+    [80353] = true, -- Time Warp
+    [264667] = true, -- Primal Rage
+    [390386] = true, -- Fury of the Aspects
+    [1022] = true, -- Blessing of Protection
+    [6940] = true, -- Blessing of Sacrifice
+    [1044] = true, -- Blessing of Freedom
+    [33206] = true, -- Pain Suppression
+    [47788] = true, -- Guardian Spirit
+    [116849] = true, -- Life Cocoon
+    [102342] = true, -- Ironbark
+}
+
 local MAJOR_EXTERNAL_BUFFS = {
     [2825] = true,   -- Bloodlust
     [32182] = true,  -- Heroism
@@ -494,11 +520,10 @@ local RAID_BUFFS = {
 local function ShouldTrackAura(aura)
     if not aura then return false end
     local spellID = SafeUnbox(aura.spellId)
-    if aura.isHelpful and (MAJOR_EXTERNAL_BUFFS[spellID] or RAID_BUFFS[spellID]) then
+    if aura.isHelpful and (MAJOR_EXTERNAL_BUFFS[spellID] or RAID_BUFFS[spellID] or ACTIVE_MITIGATION_SPELLS[spellID]) then
         return true
     end
-    local duration = SafeUnbox(aura.duration)
-    return aura.isFromPlayerOrPlayerPet and duration and duration > 0
+    return false
 end
 
 local auraTrackingSuspended = false
@@ -714,6 +739,17 @@ local function StartActiveRun(buildLabel)
         deaths = 0,
         group = group,
     }
+
+    activeRun.trinkets = { GetInventoryItemID("player", 13), GetInventoryItemID("player", 14) }
+    activeRun.trinketSpells = {}
+    activeRun.trinketCDsUsed = {}
+    for _, itemID in ipairs(activeRun.trinkets) do
+        if itemID then
+            local spellName, spellID = C_Item.GetItemSpell(itemID)
+            if spellID then activeRun.trinketSpells[spellID] = itemID end
+        end
+    end
+
     ReconcileActiveAuras()
     CheckWeaponEnchants()
     Print("Active run tracking started for " .. (activeRun.instance or "") .. " (" .. (activeRun.buildLabel or "") .. ")")
@@ -801,6 +837,17 @@ local function StartCustomRun()
                 deaths = 0,
                 group = group,
             }
+
+            activeRun.trinkets = { GetInventoryItemID("player", 13), GetInventoryItemID("player", 14) }
+            activeRun.trinketSpells = {}
+            activeRun.trinketCDsUsed = {}
+            for _, itemID in ipairs(activeRun.trinkets) do
+                if itemID then
+                    local spellName, spellID = C_Item.GetItemSpell(itemID)
+                    if spellID then activeRun.trinketSpells[spellID] = itemID end
+                end
+            end
+
             ReconcileActiveAuras()
             CheckWeaponEnchants()
             Print("Custom tracking started: " .. label .. ". Use Stop button or /bc record when done.")
@@ -998,11 +1045,13 @@ local function GetNativeMeterData(preferCurrent, initialSessionID, startedInComb
                     end
                 end
             end
-            return nil
         end
 
         -- Fallback / M+ path: use FromType with smart order
         local sessionOrder = {Enum.DamageMeterSessionType.Overall, Enum.DamageMeterSessionType.Current}
+        if preferCurrent then
+            sessionOrder = {Enum.DamageMeterSessionType.Current}
+        end
 
         for _, st in ipairs(sessionOrder) do
             local sess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromType, nil, st, dmType)
@@ -1148,6 +1197,10 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
         buffDurations = recordSource.buffDurations,
         activeAuras = recordSource.activeAuras,
         group = recordSource.group,
+        trinkets = recordSource.trinkets,
+        trinketSpells = recordSource.trinketSpells,
+        trinketCDsUsed = recordSource.trinketCDsUsed,
+        externalCDsUsed = recordSource.externalCDsUsed,
     }
 
     -- Clear active run and combat segment immediately to allow new runs to start
@@ -1198,7 +1251,7 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
             hasActivity = meterSummary.hasActivity
         end
 
-        if capturedSource.runType == "custom" and dt == 0 and damage == 0 and healing == 0 then
+        if capturedSource.runType == "custom" and not capturedSource.hadCombat then
             Print("No combat activity recorded. Custom run not saved.")
             return
         end
@@ -1408,6 +1461,10 @@ local function OnCombatEvent(self, event, ...)
                 buffDurations = activeRun.buffDurations,
                 activeAuras = activeRun.activeAuras,
                 group = activeRun.group,
+                trinkets = activeRun.trinkets,
+                trinketSpells = activeRun.trinketSpells,
+                trinketCDsUsed = activeRun.trinketCDsUsed,
+                externalCDsUsed = activeRun.externalCDsUsed,
             }
         end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then

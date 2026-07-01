@@ -1195,6 +1195,116 @@ function BuildCompare_RefreshUI()
             ShowMatchTooltip(matchRowFrame.a)
             ShowMatchTooltip(matchRowFrame.b)
             ShowMatchTooltip(matchRowFrame.d)
+
+            local function ShowMatchLabelTooltip(labelString)
+                local f = CreateFrame("Frame", nil, matchRowFrame)
+                f:SetPoint("TOPLEFT", labelString, "TOPLEFT")
+                f:SetPoint("BOTTOMRIGHT", labelString, "BOTTOMRIGHT")
+                f:EnableMouse(true)
+                f:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:ClearLines()
+                    GameTooltip:AddLine("Match Quality", 1, 0.82, 0)
+                    GameTooltip:AddLine("Indicates how directly comparable the two runs are based on group composition, key level, deaths, and avoidable damage.", 1, 1, 1, true)
+                    GameTooltip:Show()
+                end)
+                f:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            end
+            ShowMatchLabelTooltip(matchRowFrame.label)
+        end
+
+        -- === Helper for CD Tooltips ===
+        local function ShowCDTooltip(parentRow, colFontString, cdList, title)
+            if not cdList or #cdList == 0 then return end
+            local f = CreateFrame("Frame", nil, parentRow)
+            f:SetPoint("TOPLEFT", colFontString, "TOPLEFT")
+            f:SetPoint("BOTTOMRIGHT", colFontString, "BOTTOMRIGHT")
+            f:EnableMouse(true)
+            f:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:ClearLines()
+                GameTooltip:AddLine(title, 1, 0.82, 0)
+                
+                local counts = {}
+                local spellIds = {}
+                for _, cd in ipairs(cdList) do
+                    local name = cd.name or "Unknown"
+                    counts[name] = (counts[name] or 0) + 1
+                    if cd.spellId and not spellIds[name] then
+                        spellIds[name] = cd.spellId
+                    end
+                end
+                local sorted = {}
+                for name, count in pairs(counts) do
+                    table.insert(sorted, {name=name, count=count, spellId=spellIds[name]})
+                end
+                table.sort(sorted, function(cdA, cdB)
+                    if cdA.count == cdB.count then
+                        return cdA.name < cdB.name
+                    end
+                    return cdA.count > cdB.count
+                end)
+                
+                for _, entry in ipairs(sorted) do
+                    local displayName = entry.name
+                    if entry.spellId then
+                        local icon
+                        if C_Spell and C_Spell.GetSpellTexture then
+                            icon = C_Spell.GetSpellTexture(entry.spellId)
+                        elseif C_Spell and C_Spell.GetSpellInfo then
+                            local info = C_Spell.GetSpellInfo(entry.spellId)
+                            icon = info and info.iconID
+                        elseif GetSpellTexture then
+                            icon = GetSpellTexture(entry.spellId)
+                        end
+                        if icon then
+                            displayName = string.format("|T%s:16:16:0:0|t %s", icon, entry.name)
+                        end
+                    end
+                    GameTooltip:AddDoubleLine(displayName, tostring(entry.count), 1, 1, 1, 1, 1, 1)
+                end
+                GameTooltip:Show()
+            end)
+            f:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        end
+
+        -- === Helper for Talent Tooltips ===
+        local function ShowTalentTooltip(parentRow, colFontString, talentList, title)
+            if not talentList or #talentList == 0 then return end
+            local f = CreateFrame("Frame", nil, parentRow)
+            f:SetPoint("TOPLEFT", colFontString, "TOPLEFT")
+            f:SetPoint("BOTTOMRIGHT", colFontString, "BOTTOMRIGHT")
+            f:EnableMouse(true)
+            f:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:ClearLines()
+                GameTooltip:AddLine(title, 1, 0.82, 0)
+                
+                for _, talentName in ipairs(talentList) do
+                    local icon
+                    if C_Spell and C_Spell.GetSpellTexture then
+                        icon = C_Spell.GetSpellTexture(talentName)
+                    end
+                    if not icon and C_Spell and C_Spell.GetSpellInfo then
+                        local info = C_Spell.GetSpellInfo(talentName)
+                        icon = info and info.iconID
+                    end
+                    if not icon and GetSpellTexture then
+                        icon = GetSpellTexture(talentName)
+                    end
+                    if not icon and GetSpellInfo then
+                        local _, _, iconID = GetSpellInfo(talentName)
+                        icon = iconID
+                    end
+                    local displayName = talentName
+                    if icon then
+                        displayName = string.format("|T%s:16:16:0:0|t %s", icon, talentName)
+                    end
+                    GameTooltip:AddLine(displayName, 1, 1, 1)
+                end
+                GameTooltip:Show()
+            end)
+            f:SetScript("OnLeave", function() GameTooltip:Hide() end)
         end
 
         -- === Performance metrics (aligned rows) ===
@@ -1237,6 +1347,19 @@ function BuildCompare_RefreshUI()
             local ga_pct = pctB > pctA
             local gb_pct = pctA > pctB
             addRow("Avoidable DT %", pctA, pctB, ta_pct, tb_pct, BuildCompare_FormatPercentDiffLowerBetter(pctA, pctB), ga_pct, gb_pct, 6)
+            local avoidRowFrame = rows[#rows]
+            local f_avoid = CreateFrame("Frame", nil, avoidRowFrame)
+            f_avoid:SetPoint("TOPLEFT", avoidRowFrame.label, "TOPLEFT")
+            f_avoid:SetPoint("BOTTOMRIGHT", avoidRowFrame.label, "BOTTOMRIGHT")
+            f_avoid:EnableMouse(true)
+            f_avoid:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:ClearLines()
+                GameTooltip:AddLine("Avoidable DT %", 1, 0.82, 0)
+                GameTooltip:AddLine("Represents the percentage of total Damage Taken that came from avoidable sources (like standing in fire).", 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            f_avoid:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
             -- Def CDs
             local cda = #(a.defensiveCDsUsed or {})
@@ -1244,6 +1367,43 @@ function BuildCompare_RefreshUI()
             ta, tb = tostring(cda), tostring(cdb)
             ga = cda > cdb; gb = cdb > cda
             addRow("Def CDs", cda, cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(cda, cdb), ga, gb, 18)
+            local defRowFrame = rows[#rows]
+            ShowCDTooltip(defRowFrame, defRowFrame.a, a.defensiveCDsUsed, "Defensive CDs")
+            ShowCDTooltip(defRowFrame, defRowFrame.b, b.defensiveCDsUsed, "Defensive CDs")
+
+            -- Active Mit %
+            local a_mit = 0
+            local b_mit = 0
+            if a.buffDurations and a.duration and a.duration > 0 then
+                for spellId, dur in pairs(a.buffDurations) do
+                    if _G.BuildCompare_ACTIVE_MITIGATION and _G.BuildCompare_ACTIVE_MITIGATION[spellId] then
+                        a_mit = a_mit + dur
+                    end
+                end
+                a_mit = (a_mit / a.duration) * 100
+            end
+            if b.buffDurations and b.duration and b.duration > 0 then
+                for spellId, dur in pairs(b.buffDurations) do
+                    if _G.BuildCompare_ACTIVE_MITIGATION and _G.BuildCompare_ACTIVE_MITIGATION[spellId] then
+                        b_mit = b_mit + dur
+                    end
+                end
+                b_mit = (b_mit / b.duration) * 100
+            end
+            if a_mit > 0 or b_mit > 0 then
+                local ta_mit = string.format("%.1f%%", a_mit)
+                local tb_mit = string.format("%.1f%%", b_mit)
+                local diff_mit = b_mit - a_mit
+                local diffTxt_mit
+                if diff_mit > 0.05 then
+                    diffTxt_mit = string.format("|cFF00FF00+%.1f%%|r", diff_mit)
+                elseif diff_mit < -0.05 then
+                    diffTxt_mit = string.format("|cFFFF3333-%.1f%%|r", math.abs(diff_mit))
+                else
+                    diffTxt_mit = "|cFFFFFFFF0.0%|r"
+                end
+                addRow("Active Mit %", a_mit, b_mit, ta_mit, tb_mit, diffTxt_mit, a_mit > b_mit, b_mit > a_mit, 6)
+            end
         end
 
         local function renderDmgSection()
@@ -1285,6 +1445,9 @@ function BuildCompare_RefreshUI()
             ta, tb = tostring(dmg_cda), tostring(dmg_cdb)
             ga = dmg_cda > dmg_cdb; gb = dmg_cdb > dmg_cda
             addRow("Dmg CDs", dmg_cda, dmg_cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(dmg_cda, dmg_cdb), ga, gb, 18)
+            local dmgRowFrame = rows[#rows]
+            ShowCDTooltip(dmgRowFrame, dmgRowFrame.a, a.dpsCDsUsed, "Damage CDs")
+            ShowCDTooltip(dmgRowFrame, dmgRowFrame.b, b.dpsCDsUsed, "Damage CDs")
         end
 
         local function renderHealSection()
@@ -1326,12 +1489,105 @@ function BuildCompare_RefreshUI()
             ta, tb = tostring(heal_cda), tostring(heal_cdb)
             ga = heal_cda > heal_cdb; gb = heal_cdb > heal_cda
             addRow("Heal CDs", heal_cda, heal_cdb, ta, tb, BuildCompare_FormatPercentDiffNeutral(heal_cda, heal_cdb), ga, gb, 18)
+            local healRowFrame = rows[#rows]
+            ShowCDTooltip(healRowFrame, healRowFrame.a, a.healingCDsUsed, "Healing CDs")
+            ShowCDTooltip(healRowFrame, healRowFrame.b, b.healingCDsUsed, "Healing CDs")
+        end
+
+        local function renderTalentsSection()
+            local collapsed = addSection("|cFFFFD100Talents:|r", 6)
+            if collapsed then return end
+
+            local loadoutA = a.talents and a.talents.loadoutName or "Unknown"
+            local loadoutB = b.talents and b.talents.loadoutName or "Unknown"
+            addRow("Loadout", nil, nil, loadoutA, loadoutB, "", false, false, 6)
+
+            local onlyA, onlyB = {}, {}
+            if BuildCompare_TalentDiff and a.talents and b.talents then
+                onlyA, onlyB = BuildCompare_TalentDiff(a.talents, b.talents)
+            end
+            local na = #onlyA
+            local nb = #onlyB
+            local diffTxt = ""
+            if na == 0 and nb == 0 then
+                diffTxt = "|cFFFFFFFFNeutral|r"
+            end
+            addRow("Talent Diff", na, nb, tostring(na), tostring(nb), diffTxt, false, false, 18)
+            local rowFrame = rows[#rows]
+
+            local f_label = CreateFrame("Frame", nil, rowFrame)
+            f_label:SetPoint("TOPLEFT", rowFrame.label, "TOPLEFT")
+            f_label:SetPoint("BOTTOMRIGHT", rowFrame.label, "BOTTOMRIGHT")
+            f_label:EnableMouse(true)
+            f_label:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:ClearLines()
+                GameTooltip:AddLine("Talent Diff", 1, 0.82, 0)
+                GameTooltip:AddLine("Shows the number of unique talents taken in each run.", 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            f_label:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+            ShowTalentTooltip(rowFrame, rowFrame.a, onlyA, "Unique Talents (A)")
+            ShowTalentTooltip(rowFrame, rowFrame.b, onlyB, "Unique Talents (B)")
         end
 
         local function renderMiscSection()
             -- Section 4: Misc
             local collapsed = addSection("|cFFFFD100Misc:|r", 6)
             if collapsed then return end
+
+            -- Externals:
+            if (a.externalCDsUsed and next(a.externalCDsUsed)) or (b.externalCDsUsed and next(b.externalCDsUsed)) then
+                addSection("  |cFFFFD100Externals:|r", 6)
+                local extSpells = {}
+                for k in pairs(a.externalCDsUsed or {}) do extSpells[k] = true end
+                for k in pairs(b.externalCDsUsed or {}) do extSpells[k] = true end
+                for spellID in pairs(extSpells) do
+                    local numA = (a.externalCDsUsed and a.externalCDsUsed[spellID]) or 0
+                    local numB = (b.externalCDsUsed and b.externalCDsUsed[spellID]) or 0
+                    local sInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
+                    local sName = sInfo and sInfo.name or ("Spell " .. spellID)
+                    local ta_ext = tostring(numA)
+                    local tb_ext = tostring(numB)
+                    addRow("  " .. sName, numA, numB, ta_ext, tb_ext, BuildCompare_FormatPercentDiffNeutral(numA, numB), numA > numB, numB > numA, 6)
+                end
+            end
+
+            -- Trinkets:
+            if (a.trinkets and #a.trinkets > 0) or (b.trinkets and #b.trinkets > 0) then
+                addSection("  |cFFFFD100Trinkets:|r", 6)
+                -- Get names
+                local aNames = {}
+                for _, itemID in ipairs(a.trinkets or {}) do
+                    if itemID then
+                        local itemName = C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(itemID) or GetItemInfo(itemID) or ("Item " .. itemID)
+                        table.insert(aNames, itemName)
+                    end
+                end
+                local bNames = {}
+                for _, itemID in ipairs(b.trinkets or {}) do
+                    if itemID then
+                        local itemName = C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(itemID) or GetItemInfo(itemID) or ("Item " .. itemID)
+                        table.insert(bNames, itemName)
+                    end
+                end
+                addRow("  Equipped", nil, nil, table.concat(aNames, ", "), table.concat(bNames, ", "), "", false, false, 6)
+                
+                -- Casts
+                local trSpells = {}
+                for k in pairs(a.trinketCDsUsed or {}) do trSpells[k] = true end
+                for k in pairs(b.trinketCDsUsed or {}) do trSpells[k] = true end
+                for spellID in pairs(trSpells) do
+                    local numA = (a.trinketCDsUsed and a.trinketCDsUsed[spellID]) or 0
+                    local numB = (b.trinketCDsUsed and b.trinketCDsUsed[spellID]) or 0
+                    local sInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
+                    local sName = sInfo and sInfo.name or ("Spell " .. spellID)
+                    local ta_tr = tostring(numA)
+                    local tb_tr = tostring(numB)
+                    addRow("    " .. sName, numA, numB, ta_tr, tb_tr, BuildCompare_FormatPercentDiffNeutral(numA, numB), numA > numB, numB > numA, 6)
+                end
+            end
 
             -- Interrupts
             local na, nb = a.interrupts or 0, b.interrupts or 0
@@ -1361,7 +1617,7 @@ function BuildCompare_RefreshUI()
             valB = BuildCompare_UnboxSecret(nb)
             ga = valB > valA
             gb = valA > valB
-            addRow("Deaths", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 50)
+            addRow("Deaths", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 18)
         end
 
         local function renderStatsSection()
@@ -1378,7 +1634,9 @@ function BuildCompare_RefreshUI()
                 local _, str = BuildCompare_SafeCall(UnitStat, nil, "player", 1)
                 local _, agi = BuildCompare_SafeCall(UnitStat, nil, "player", 2)
                 local _, int = BuildCompare_SafeCall(UnitStat, nil, "player", 4)
-                str = str or 0; agi = agi or 0; int = int or 0
+                str = BuildCompare_UnboxSecret(str) or 0
+                agi = BuildCompare_UnboxSecret(agi) or 0
+                int = BuildCompare_UnboxSecret(int) or 0
                 if agi > str and agi > int then
                     primaryStat = "agility"
                 elseif int > str and int > agi then
@@ -1660,46 +1918,14 @@ function BuildCompare_RefreshUI()
             end)
 
             local cooldownSpells = {}
-            local procSpells = {}
             for _, spellID in ipairs(sortedSpells) do
-                local numID = tonumber(spellID)
-                if BuildCompare_IsActiveCooldown(numID or spellID) then
-                    table.insert(cooldownSpells, spellID)
-                else
-                    table.insert(procSpells, spellID)
-                end
+                table.insert(cooldownSpells, spellID)
             end
 
             -- Render Cooldowns
             if #cooldownSpells > 0 then
                 addSection("  |cFFFFD100Cooldowns:|r", 6)
                 for _, spellID in ipairs(cooldownSpells) do
-                    local uptimeA = getUptime(aUptimes, spellID)
-                    local uptimeB = getUptime(bUptimes, spellID)
-                    if uptimeA > 1.0 or uptimeB > 1.0 then
-                        local spellName = GetSpellName(spellID)
-                        local specTxtA = string.format("%.1f%%", uptimeA)
-                        local specTxtB = string.format("%.1f%%", uptimeB)
-                        local diffVal = uptimeB - uptimeA
-                        local diffTxt
-                        if diffVal > 0.05 then
-                            diffTxt = string.format("|cFF00FF00+%.1f%%|r", diffVal)
-                        elseif diffVal < -0.05 then
-                            diffTxt = string.format("|cFFFF3333-%.1f%%|r", math.abs(diffVal))
-                        else
-                            diffTxt = "|cFFFFFFFF0.0%|r"
-                        end
-                        local ga = uptimeA > uptimeB
-                        local gb = uptimeB > uptimeA
-                        addRow("  " .. spellName, uptimeA, uptimeB, specTxtA, specTxtB, diffTxt, ga, gb, 6)
-                    end
-                end
-            end
-
-            -- Render Procs & Passives
-            if #procSpells > 0 then
-                addSection("  |cFFFFD100Procs & Passives:|r", 6)
-                for _, spellID in ipairs(procSpells) do
                     local uptimeA = getUptime(aUptimes, spellID)
                     local uptimeB = getUptime(bUptimes, spellID)
                     if uptimeA > 1.0 or uptimeB > 1.0 then
@@ -1745,11 +1971,11 @@ function BuildCompare_RefreshUI()
         -- Layout presets
         local layoutPreset
         if activeLayout == "TANK" then
-            layoutPreset = { renderTankSection, renderDmgSection, renderHealSection, renderMiscSection }
+            layoutPreset = { renderTankSection, renderDmgSection, renderHealSection, renderMiscSection, renderTalentsSection }
         elseif activeLayout == "HEALER" then
-            layoutPreset = { renderHealSection, renderDmgSection, renderTankSection, renderMiscSection }
+            layoutPreset = { renderHealSection, renderDmgSection, renderTankSection, renderMiscSection, renderTalentsSection }
         else
-            layoutPreset = { renderDmgSection, renderHealSection, renderTankSection, renderMiscSection }
+            layoutPreset = { renderDmgSection, renderHealSection, renderTankSection, renderMiscSection, renderTalentsSection }
         end
 
         -- Render modular sections dynamically using cumulative y offset
@@ -1760,22 +1986,6 @@ function BuildCompare_RefreshUI()
         -- Render Stats and Buffs sections at the end
         renderStatsSection()
         renderBuffsSection()
-
-        if BuildCompare_TalentDiff then
-            local onlyA, onlyB = BuildCompare_TalentDiff(a.talents, b.talents)
-            if #onlyA > 0 or #onlyB > 0 then
-                table.insert(compareRows, CreateAlignedCompareRow(content, y, true, "Unique Talents", "", "", "", false, false, false))
-                y = y + 17
-                
-                local maxCount = math.max(#onlyA, #onlyB)
-                for i = 1, maxCount do
-                    local valA = onlyA[i] or "-"
-                    local valB = onlyB[i] or "-"
-                    table.insert(compareRows, CreateAlignedCompareRow(content, y, false, "Talent", valA, valB, "-", false, false))
-                    y = y + 14
-                end
-            end
-        end
 
         -- Resize content for the rows we created + a little padding for scroll
         local finalH = y + 12
@@ -2044,7 +2254,7 @@ function BuildCompare_CreateMinimapButton()
     local icon = minimapBtn:CreateTexture(nil, "BACKGROUND")
     icon:SetSize(20, 20)
     icon:SetPoint("CENTER", 0, 0)
-    icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
+    icon:SetTexture("Interface\\AddOns\\BuildCompare\\icon.tga")
     icon:SetMask("Interface\\Masks\\CircleMask")
 
     -- Circular border using the standard WoW tracking border
