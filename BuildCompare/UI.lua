@@ -2015,8 +2015,8 @@ function BuildCompare_CreateMinimapButton()
 
     minimapBtn = CreateFrame("Button", "BuildCompareMinimapBtn", Minimap)
     minimapBtn:SetSize(32, 32)
-    minimapBtn:SetFrameStrata("MEDIUM")
-    minimapBtn:SetFrameLevel(8)
+    minimapBtn:SetFrameStrata("HIGH")
+    minimapBtn:SetFrameLevel(10)
     minimapBtn:SetClampedToScreen(false)
 
     -- Circular backdrop using the standard WoW tracking border
@@ -2031,7 +2031,7 @@ function BuildCompare_CreateMinimapButton()
     icon:SetPoint("CENTER", 0, 1)
     icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
     -- Apply circular mask so the icon is clipped to a circle
-    icon:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+    icon:SetMask("Interface\\Masks\\CircleMask")
 
     -- Hover highlight
     local hl = minimapBtn:CreateTexture(nil, "HIGHLIGHT")
@@ -2041,7 +2041,7 @@ function BuildCompare_CreateMinimapButton()
 
     -- Position helper
     local function UpdateMinimapButtonPosition()
-        local angle = (BuildCompareDB and BuildCompareDB.settings and BuildCompareDB.settings.minimapAngle) or 45
+        local angle = (BuildCompareDB and BuildCompareDB.settings and BuildCompareDB.settings.minimapAngle) or 200
         local rad = math.rad(angle)
         local x = 80 * math.cos(rad)
         local y = 80 * math.sin(rad)
@@ -2105,6 +2105,8 @@ function BuildCompare_CreateMinimapButton()
     minimapBtn:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
+
+    minimapBtn:Show()
 end
 
 _G.BuildCompare_CreateMinimapButton = BuildCompare_CreateMinimapButton

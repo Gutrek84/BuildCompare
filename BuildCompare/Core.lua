@@ -1532,7 +1532,7 @@ f:SetScript("OnEvent", function(self, event, arg1, ...)
         CharDB.runs = CharDB.runs or {}
         BuildCompareDB.settings = BuildCompareDB.settings or {}
         BuildCompareDB.settings.collapsedSections = BuildCompareDB.settings.collapsedSections or {}
-        BuildCompareDB.settings.minimapAngle = BuildCompareDB.settings.minimapAngle or 45
+        BuildCompareDB.settings.minimapAngle = BuildCompareDB.settings.minimapAngle or 200
         if BuildCompare_CreateMinimapButton then
             BuildCompare_CreateMinimapButton()
         end
