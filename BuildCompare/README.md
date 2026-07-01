@@ -5,7 +5,7 @@ Have you ever swapped a talent, changed a trinket, or wanted to see how a heavy 
 BuildCompare is a lightweight, easy-to-read comparison tool designed specifically for the average World of Warcraft player. I am not trying to replace or compete with hardcore parsing websites, but rather trying to give you as close and fast a comparison as possible right in the game to answer one simple question: **"How did my performance change when I swapped X for Y?"**
 
 ### My Design Philosophy
-This addon is built around **simplicity and visibility**. I am not trying to track every single microscopic combat event or obscure buff. Instead, BuildCompare gives you a beautifully formatted, side-by-side breakdown of the things that actually matter when experimenting with your build:
+This addon is built around **simplicity and visibility**. I am not trying to track every single microscopic combat event or obscure buff. Instead, BuildCompare gives you a beautifully formatted, side-by-side breakdown of the things that have the biggest impacts when experimenting with your build:
 - **Core Metrics:** Damage, Healing, DPS/HPS, Interrupts, Dispels, and Deaths.
 - **Defensive Play:** Tracks "Avoidable Damage Taken" so you can see if a new build helped you survive, or if you just stood in more fire.
 - **Cooldown Usage:** A clean breakdown of how many times you pressed your offensive, defensive, and healing cooldowns (complete with spell tooltips and icons).
