@@ -2019,32 +2019,33 @@ function BuildCompare_CreateMinimapButton()
     minimapBtn:SetFrameLevel(10)
     minimapBtn:SetClampedToScreen(false)
 
-    -- Circular backdrop using the standard WoW tracking border
-    local backdrop = minimapBtn:CreateTexture(nil, "BACKGROUND")
-    backdrop:SetSize(32, 32)
-    backdrop:SetPoint("CENTER")
-    backdrop:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-
     -- Icon texture (book / journal icon)
-    local icon = minimapBtn:CreateTexture(nil, "ARTWORK")
+    local icon = minimapBtn:CreateTexture(nil, "BACKGROUND")
     icon:SetSize(20, 20)
-    icon:SetPoint("CENTER", 0, 1)
+    icon:SetPoint("CENTER", 0, 0)
     icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
-    -- Apply circular mask so the icon is clipped to a circle
     icon:SetMask("Interface\\Masks\\CircleMask")
+
+    -- Circular border using the standard WoW tracking border
+    local border = minimapBtn:CreateTexture(nil, "ARTWORK")
+    border:SetSize(54, 54)
+    border:SetPoint("TOPLEFT", -11, 11)
+    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 
     -- Hover highlight
     local hl = minimapBtn:CreateTexture(nil, "HIGHLIGHT")
     hl:SetSize(32, 32)
     hl:SetPoint("CENTER")
     hl:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    hl:SetBlendMode("ADD")
 
     -- Position helper
     local function UpdateMinimapButtonPosition()
         local angle = (BuildCompareDB and BuildCompareDB.settings and BuildCompareDB.settings.minimapAngle) or 200
         local rad = math.rad(angle)
-        local x = 80 * math.cos(rad)
-        local y = 80 * math.sin(rad)
+        local radius = (Minimap:GetWidth() / 2) + 5
+        local x = radius * math.cos(rad)
+        local y = radius * math.sin(rad)
         minimapBtn:SetPoint("CENTER", Minimap, "CENTER", x, y)
     end
     UpdateMinimapButtonPosition()
@@ -2118,8 +2119,9 @@ function BuildCompare_ResetMinimapButton()
     if BuildCompareMinimapBtn then
         BuildCompareMinimapBtn:ClearAllPoints()
         local rad = math.rad(200)
-        local x = 80 * math.cos(rad)
-        local y = 80 * math.sin(rad)
+        local radius = (Minimap:GetWidth() / 2) + 5
+        local x = radius * math.cos(rad)
+        local y = radius * math.sin(rad)
         BuildCompareMinimapBtn:SetPoint("CENTER", Minimap, "CENTER", x, y)
     end
     DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[BuildCompare]|r Minimap button position reset to bottom-left (200 degrees).")
