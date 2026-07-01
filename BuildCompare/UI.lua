@@ -2029,7 +2029,7 @@ function BuildCompare_CreateMinimapButton()
     -- Circular border using the standard WoW tracking border
     local border = minimapBtn:CreateTexture(nil, "ARTWORK")
     border:SetSize(54, 54)
-    border:SetPoint("TOPLEFT", -11, 11)
+    border:SetPoint("TOPLEFT", 0, 0)
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 
     -- Hover highlight
