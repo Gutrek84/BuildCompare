@@ -2110,3 +2110,18 @@ function BuildCompare_CreateMinimapButton()
 end
 
 _G.BuildCompare_CreateMinimapButton = BuildCompare_CreateMinimapButton
+
+function BuildCompare_ResetMinimapButton()
+    if BuildCompareDB and BuildCompareDB.settings then
+        BuildCompareDB.settings.minimapAngle = 200
+    end
+    if BuildCompareMinimapBtn then
+        BuildCompareMinimapBtn:ClearAllPoints()
+        local rad = math.rad(200)
+        local x = 80 * math.cos(rad)
+        local y = 80 * math.sin(rad)
+        BuildCompareMinimapBtn:SetPoint("CENTER", Minimap, "CENTER", x, y)
+    end
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[BuildCompare]|r Minimap button position reset to bottom-left (200 degrees).")
+end
+_G.BuildCompare_ResetMinimapButton = BuildCompare_ResetMinimapButton

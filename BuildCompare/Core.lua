@@ -346,8 +346,10 @@ SlashCmdList["BUILDCOMPARE"] = function(msg)
             Print(i .. ": " .. tostring(errs[i]))
         end
         if #errs == 0 then Print("No errors logged.") end
+    elseif msg == "reset" then
+        if _G.BuildCompare_ResetMinimapButton then _G.BuildCompare_ResetMinimapButton() end
     else
-        Print("Commands: /bc | /bc open | /bc record | /bc clear | /bc debug | /bc mini | /bc errors")
+        Print("Commands: /bc | /bc open | /bc record | /bc clear | /bc debug | /bc mini | /bc errors | /bc reset")
     end
 end
 
@@ -1533,6 +1535,9 @@ f:SetScript("OnEvent", function(self, event, arg1, ...)
         BuildCompareDB.settings = BuildCompareDB.settings or {}
         BuildCompareDB.settings.collapsedSections = BuildCompareDB.settings.collapsedSections or {}
         BuildCompareDB.settings.minimapAngle = BuildCompareDB.settings.minimapAngle or 200
+        if BuildCompareDB.settings.minimapAngle == 45 then
+            BuildCompareDB.settings.minimapAngle = 200
+        end
         if BuildCompare_CreateMinimapButton then
             BuildCompare_CreateMinimapButton()
         end
