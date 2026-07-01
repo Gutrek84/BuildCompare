@@ -1740,25 +1740,25 @@ function BuildCompare_RefreshUI()
         renderStatsSection()
         renderBuffsSection()
 
-        -- Resize content for the rows we created + a little padding for scroll
-        local finalH = y + 12
-        content:SetHeight(math.max(120, finalH))
-
-        -- Show a compact talent note at very bottom if there were unique talents (non-row text for long content)
-        -- (kept minimal to preserve row alignment focus; full diff still available via other UI if needed)
         if BuildCompare_TalentDiff then
             local onlyA, onlyB = BuildCompare_TalentDiff(a.talents, b.talents)
             if #onlyA > 0 or #onlyB > 0 then
-                local note = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                note:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -y - 2)
-                note:SetPoint("RIGHT", content, "RIGHT", -4, 0)
-                local t = "Talents diff: "
-                if #onlyA > 0 then t = t .. "A only: " .. table.concat(onlyA, ", ") end
-                if #onlyB > 0 then t = t .. (#onlyA > 0 and " | " or "") .. "B only: " .. table.concat(onlyB, ", ") end
-                note:SetText(t)
-                -- Not inserted into rows to avoid :Hide() on FontString; it will be replaced on next compare anyway.
+                table.insert(compareRows, CreateAlignedCompareRow(content, y, true, "Unique Talents", "", "", ""))
+                y = y + 17
+                
+                local maxCount = math.max(#onlyA, #onlyB)
+                for i = 1, maxCount do
+                    local valA = onlyA[i] or "-"
+                    local valB = onlyB[i] or "-"
+                    table.insert(compareRows, CreateAlignedCompareRow(content, y, false, "Talent", valA, valB, "-", false, false))
+                    y = y + 14
+                end
             end
         end
+
+        -- Resize content for the rows we created + a little padding for scroll
+        local finalH = y + 12
+        content:SetHeight(math.max(120, finalH))
     else
         if frame.compareNoSel then frame.compareNoSel:Show() end
         if frame.compareContentFrame then
