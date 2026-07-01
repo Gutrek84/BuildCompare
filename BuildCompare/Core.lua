@@ -352,19 +352,15 @@ SlashCmdList["BUILDCOMPARE"] = function(msg)
 end
 
 -- Detect if we are in a trackable instance (M+ focus for now; extend for raids)
-local function GetCurrentInstanceContext()
-    local name, instanceType, difficultyID, difficultyName, maxPlayers, dynamicDifficulty, isDynamic, instanceMapID, instanceGroupSize = BuildCompare_SafeCall(GetInstanceInfo, nil)
-    local context = {name = name, difficultyID = difficultyID}
-    -- Streamlined: only auto-track full Mythic+ runs (via keystone) and individual raid bosses (via ENCOUNTER).
-    -- Removed all auto for dummies, delves, outdoor, raid trash, etc.
-    if instanceType == "party" and difficultyID == 8 then -- Mythic Keystone
+local function IsTrackableContent()
+    local name, instanceType, difficultyID, difficultyName = BuildCompare_SafeCall(GetInstanceInfo, nil)
+    if instanceType == "party" and difficultyID == 8 then
         local keystoneLevel = C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo and select(1, BuildCompare_SafeCall(C_ChallengeMode.GetActiveKeystoneInfo, 0)) or 0
-        context.name = string.format("%s (+%d)", name or "Unknown", keystoneLevel)
-        return true, context
-    elseif difficultyID == 16 or difficultyID == 15 or difficultyID == 17 then -- M+, mythic, heroic, etc.
-        return true, context
+        return true, name, difficultyName, keystoneLevel
+    elseif difficultyID == 16 or difficultyID == 15 or difficultyID == 17 then
+        return true, name, difficultyName, 0
     end
-    return false, context
+    return false, name, difficultyName, 0
 end
 
 local function GetHeroSpecName()
