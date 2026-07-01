@@ -1312,9 +1312,8 @@ function BuildCompare_RecordCurrentRun(optionalLabel)
 end
 
 function BuildCompare_ClearDB()
-    DB.runs = {}
     CharDB.runs = {}
-    Print("All recorded runs cleared.")
+    Print("Character runs cleared.")
     if BuildCompareFrame and BuildCompareFrame:IsShown() then
         BuildCompare_RefreshUI()
     end
@@ -1506,6 +1505,15 @@ f:SetScript("OnEvent", function(self, event, arg1, ...)
         DB = BuildCompareDB
         CharDB = BuildCompareCharDB
         
+        if DB.runs and #DB.runs > 0 and not CharDB.migratedGlobalRuns then
+            CharDB.migratedGlobalRuns = true
+            if not CharDB.runs or #CharDB.runs == 0 then
+                CharDB.runs = {}
+                for _, run in ipairs(DB.runs) do
+                    table.insert(CharDB.runs, run)
+                end
+            end
+        end
         if not DB.schemaVersion or DB.schemaVersion < 1 then
             DB.schemaVersion = 1
             for _, run in ipairs(DB.runs or {}) do

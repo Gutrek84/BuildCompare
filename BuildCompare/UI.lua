@@ -472,7 +472,7 @@ end
 
 local function ShowCustomDropdown()
     local options = {"All"}
-    local allRuns = (BuildCompareDB and BuildCompareDB.runs) or {}
+    local allRuns = (BuildCompareCharDB and BuildCompareCharDB.runs) or {}
     local seen = {}
     for _, r in ipairs(allRuns) do
         local rt = r.runType or (r.keyLevel and r.keyLevel > 0 and "mythic") or (r.bossName and "raid") or "custom"
@@ -875,7 +875,7 @@ end
 
 -- New scoped view: only runs matching the selected Mythic/Raid/Custom + sub-filters
 local function GetViewRuns()
-    local allRuns = (BuildCompareDB and BuildCompareDB.runs) or {}
+    local allRuns = (BuildCompareCharDB and BuildCompareCharDB.runs) or {}
     local filtered = {}
     for i = #allRuns, 1, -1 do  -- recent first
         local r = allRuns[i]
@@ -910,7 +910,7 @@ function BuildCompare_RefreshUI()
     if not content then return end
 
     -- Clean up selectedForCompare to remove runs that no longer exist in the database (e.g. cleared)
-    local allRuns = (BuildCompareDB and BuildCompareDB.runs) or {}
+    local allRuns = (BuildCompareCharDB and BuildCompareCharDB.runs) or {}
     local runsSet = {}
     for _, r in ipairs(allRuns) do
         if r.id then
