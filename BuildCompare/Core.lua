@@ -956,6 +956,7 @@ end
 -- preferCurrent: when true (non-M+ / solo dummy / short boss), we try to lock to a specific recent short sessionID
 -- (instead of just preferring Current type). This ensures DT, Heal, AvoidableDT etc. all come from the *same* pull.
 local function GetNativeMeterData(preferCurrent, initialSessionID, startedInCombat, hadCombat)
+    local pGUID = UnitGUID("player")
     if not C_DamageMeter or not C_DamageMeter.IsDamageMeterAvailable then
         return nil
     end
@@ -977,7 +978,7 @@ local function GetNativeMeterData(preferCurrent, initialSessionID, startedInComb
                     local sess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromID, nil, lockedSessionID, dmType)
                     if sess and sess.combatSources and #sess.combatSources > 0 then
                         for _, src in ipairs(sess.combatSources) do
-                            if src.isLocalPlayer then
+                            if src.isLocalPlayer or (pGUID and src.guid == pGUID) then
                                 local totalVal = BuildCompare_UnboxSecret(src.totalAmount)
                                 if dmType == Enum.DamageMeterType.Interrupts or dmType == Enum.DamageMeterType.Dispels or dmType == Enum.DamageMeterType.Deaths then
                                     local spellSum = GetActorTotalFromSpells(lockedSessionID, dmType)
@@ -1005,7 +1006,7 @@ local function GetNativeMeterData(preferCurrent, initialSessionID, startedInComb
             local sess = BuildCompare_SafeCall(C_DamageMeter.GetCombatSessionFromType, nil, st, dmType)
             if sess and sess.combatSources and #sess.combatSources > 0 then
                 for _, src in ipairs(sess.combatSources) do
-                    if src.isLocalPlayer then
+                    if src.isLocalPlayer or (pGUID and src.guid == pGUID) then
                         local totalVal = BuildCompare_UnboxSecret(src.totalAmount)
                         if dmType == Enum.DamageMeterType.Interrupts or dmType == Enum.DamageMeterType.Dispels or dmType == Enum.DamageMeterType.Deaths then
                             local spellSum = GetActorTotalFromSpellsByType(st, dmType)
