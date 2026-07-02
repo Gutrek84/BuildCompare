@@ -285,7 +285,7 @@ function BuildCompare_SnapshotTalents()
                                 local spellName = GetSpellInfo and GetSpellInfo(defInfo.spellID) or tostring(defInfo.spellID)
                                 if spellName and not seen[spellName] then
                                     seen[spellName] = true
-                                    table.insert(selected, spellName)
+                                    table.insert(selected, string.format("%s:%d", spellName, defInfo.spellID))
                                 end
                             end
                         end
@@ -304,11 +304,23 @@ function BuildCompare_TalentDiff(aTalents, bTalents)
     local aSel = (aTalents and aTalents.selected) or {}
     local bSel = (bTalents and bTalents.selected) or {}
     local aSet, bSet = {}, {}
-    for _, n in ipairs(aSel) do aSet[n] = true end
-    for _, n in ipairs(bSel) do bSet[n] = true end
+    for _, n in ipairs(aSel) do 
+        local name = strsplit(":", n)
+        aSet[name] = true 
+    end
+    for _, n in ipairs(bSel) do 
+        local name = strsplit(":", n)
+        bSet[name] = true 
+    end
     local onlyA, onlyB = {}, {}
-    for _, n in ipairs(aSel) do if not bSet[n] then table.insert(onlyA, n) end end
-    for _, n in ipairs(bSel) do if not aSet[n] then table.insert(onlyB, n) end end
+    for _, n in ipairs(aSel) do 
+        local name = strsplit(":", n)
+        if not bSet[name] then table.insert(onlyA, n) end 
+    end
+    for _, n in ipairs(bSel) do 
+        local name = strsplit(":", n)
+        if not aSet[name] then table.insert(onlyB, n) end 
+    end
     return onlyA, onlyB
 end
 
@@ -317,13 +329,25 @@ function BuildCompare_FormatTalentsDiff(aTalents, bTalents)
     local aName = (aTalents and aTalents.loadoutName) or "A"
     local bName = (bTalents and bTalents.loadoutName) or "B"
     local lines = {}
+    
+    local function stripIDs(t)
+        local stripped = {}
+        for _, v in ipairs(t) do
+            local name = strsplit(":", v)
+            table.insert(stripped, name)
+        end
+        return stripped
+    end
+    local strippedA = stripIDs(onlyA)
+    local strippedB = stripIDs(onlyB)
+
     if #onlyA > 0 then
-        table.insert(lines, string.format(" Talents only in %s: %s", aName, table.concat(onlyA, ", ")))
+        table.insert(lines, string.format(" Talents only in %s: %s", aName, table.concat(strippedA, ", ")))
     else
         table.insert(lines, string.format(" No talents unique to %s", aName))
     end
     if #onlyB > 0 then
-        table.insert(lines, string.format(" Talents only in %s: %s", bName, table.concat(onlyB, ", ")))
+        table.insert(lines, string.format(" Talents only in %s: %s", bName, table.concat(strippedB, ", ")))
     else
         table.insert(lines, string.format(" No talents unique to %s", bName))
     end

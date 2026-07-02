@@ -1576,11 +1576,31 @@ function BuildCompare_RefreshUI()
                 
                 -- Casts
                 local trSpells = {}
-                for k in pairs(a.trinketCDsUsed or {}) do trSpells[k] = true end
-                for k in pairs(b.trinketCDsUsed or {}) do trSpells[k] = true end
+                if a.trinketCDsUsed then
+                    for _, data in ipairs(a.trinketCDsUsed) do
+                        if data and data.spellId then trSpells[data.spellId] = true end
+                    end
+                end
+                if b.trinketCDsUsed then
+                    for _, data in ipairs(b.trinketCDsUsed) do
+                        if data and data.spellId then trSpells[data.spellId] = true end
+                    end
+                end
+                
                 for spellID in pairs(trSpells) do
-                    local numA = (a.trinketCDsUsed and a.trinketCDsUsed[spellID]) or 0
-                    local numB = (b.trinketCDsUsed and b.trinketCDsUsed[spellID]) or 0
+                    local numA = 0
+                    if a.trinketCDsUsed then
+                        for _, data in ipairs(a.trinketCDsUsed) do
+                            if data and data.spellId == spellID then numA = numA + 1 end
+                        end
+                    end
+                    local numB = 0
+                    if b.trinketCDsUsed then
+                        for _, data in ipairs(b.trinketCDsUsed) do
+                            if data and data.spellId == spellID then numB = numB + 1 end
+                        end
+                    end
+                    
                     local sInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
                     local sName = sInfo and sInfo.name or ("Spell " .. spellID)
                     local ta_tr = tostring(numA)

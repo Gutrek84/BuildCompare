@@ -934,9 +934,9 @@ local function GetBestSessionIDForCurrentPull(initialSessionID, startedInCombat,
     local latest = sessions[#sessions]
 
     if latest and SafeSessionIDsEqual(latest.sessionID, initialSessionID) then
-        if startedInCombat or hadCombat then
-            return latest.sessionID
-        end
+        -- If the session ID hasn't changed, but we had combat, it means the current active
+        -- combat hasn't been pushed to the history array yet. Return nil so we fall back
+        -- to Enum.DamageMeterSessionType.Current which correctly tracks the active fight.
         return nil
     end
 
@@ -1103,7 +1103,7 @@ local function GetNativeMeterData(preferCurrent, initialSessionID, startedInComb
     if dur == 0 and dmgD then dur = getSafeDur(dmgD.duration) end
     if dur <= 0 then dur = 1 end
 
-    local has = (dtD ~= nil or healD ~= nil or avoidD ~= nil)
+    local has = (dtD ~= nil or healD ~= nil or avoidD ~= nil or dmgD ~= nil)
 
     return {
         dt = dtD and dtD.total or 0,
