@@ -1532,82 +1532,124 @@ function BuildCompare_RefreshUI()
             ShowTalentTooltip(rowFrame, rowFrame.b, onlyB, "Unique Talents (B)")
         end
 
+        local function renderTrinketsSection()
+            if not ((a.trinkets and #a.trinkets > 0) or (b.trinkets and #b.trinkets > 0)) then return end
+            local collapsed = addSection("|cFFFFD100Trinkets:|r", 6)
+            if collapsed then return end
+
+            local function GetTrinketSpellID(itemID)
+                if not itemID then return nil end
+                local _, spellID
+                if C_Item and C_Item.GetItemSpell then
+                    _, spellID = C_Item.GetItemSpell(itemID)
+                end
+                if not spellID and GetItemSpell then
+                    _, spellID = GetItemSpell(itemID)
+                end
+                return spellID
+            end
+
+            local function GetTrinketIconStr(itemID)
+                if not itemID then return "None" end
+                local icon
+                if C_Item and C_Item.GetItemIconByID then
+                    icon = C_Item.GetItemIconByID(itemID)
+                end
+                if not icon and GetItemIcon then
+                    icon = GetItemIcon(itemID)
+                end
+                if icon then
+                    return string.format("|T%s:16:16:0:0|t", icon)
+                end
+                return "Item"
+            end
+
+            local function GetTrinketName(itemID)
+                if not itemID then return "None" end
+                local name
+                if C_Item and C_Item.GetItemInfo then
+                    name = C_Item.GetItemInfo(itemID)
+                end
+                if not name and GetItemInfo then
+                    name = GetItemInfo(itemID)
+                end
+                return name or ("Item " .. itemID)
+            end
+
+            local function CountTrinketCasts(cdsUsed, spellID)
+                if not spellID then return "N/A" end
+                local count = 0
+                if cdsUsed then
+                    for _, data in ipairs(cdsUsed) do
+                        if data and data.spellId == spellID then
+                            count = count + 1
+                        end
+                    end
+                end
+                return tostring(count)
+            end
+
+            local function buildLoadoutText(trinkets)
+                local txt1 = GetTrinketIconStr(trinkets and trinkets[1])
+                local txt2 = GetTrinketIconStr(trinkets and trinkets[2])
+                return txt1 .. " / " .. txt2
+            end
+
+            local function buildUsesText(trinkets, cdsUsed)
+                local sp1 = GetTrinketSpellID(trinkets and trinkets[1])
+                local sp2 = GetTrinketSpellID(trinkets and trinkets[2])
+                local c1 = CountTrinketCasts(cdsUsed, sp1)
+                local c2 = CountTrinketCasts(cdsUsed, sp2)
+                return c1 .. " / " .. c2
+            end
+
+            local txtLoadoutA = buildLoadoutText(a.trinkets)
+            local txtLoadoutB = buildLoadoutText(b.trinkets)
+            addRow("Loadout", nil, nil, txtLoadoutA, txtLoadoutB, "", false, false, 6)
+            local loadoutRow = rows[#rows]
+
+            local txtUsesA = buildUsesText(a.trinkets, a.trinketCDsUsed)
+            local txtUsesB = buildUsesText(b.trinkets, b.trinketCDsUsed)
+            addRow("Uses", nil, nil, txtUsesA, txtUsesB, "", false, false, 18)
+            local usesRow = rows[#rows]
+
+            local function attachTooltip(rowFrame)
+                if not rowFrame then return end
+                local function setTooltip(colFrame, trinkets, cdsUsed)
+                    if not trinkets or #trinkets == 0 then return end
+                    local f = CreateFrame("Frame", nil, rowFrame)
+                    f:SetAllPoints(colFrame)
+                    f:EnableMouse(true)
+                    f:SetScript("OnEnter", function(self)
+                        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                        GameTooltip:ClearLines()
+                        GameTooltip:AddLine("Trinkets", 1, 0.82, 0)
+                        for i=1, 2 do
+                            local itemID = trinkets[i]
+                            if itemID then
+                                local name = GetTrinketName(itemID)
+                                local icon = GetTrinketIconStr(itemID)
+                                local spellID = GetTrinketSpellID(itemID)
+                                local casts = CountTrinketCasts(cdsUsed, spellID)
+                                GameTooltip:AddDoubleLine(icon .. " " .. name, "Uses: " .. casts, 1, 1, 1, 1, 1, 1)
+                            end
+                        end
+                        GameTooltip:Show()
+                    end)
+                    f:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                end
+                setTooltip(rowFrame.a, a.trinkets, a.trinketCDsUsed)
+                setTooltip(rowFrame.b, b.trinkets, b.trinketCDsUsed)
+            end
+
+            attachTooltip(loadoutRow)
+            attachTooltip(usesRow)
+        end
+
         local function renderMiscSection()
             -- Section 4: Misc
             local collapsed = addSection("|cFFFFD100Misc:|r", 6)
             if collapsed then return end
-
-            -- Externals:
-            if (a.externalCDsUsed and next(a.externalCDsUsed)) or (b.externalCDsUsed and next(b.externalCDsUsed)) then
-                addSection("  |cFFFFD100Externals:|r", 6)
-                local extSpells = {}
-                for k in pairs(a.externalCDsUsed or {}) do extSpells[k] = true end
-                for k in pairs(b.externalCDsUsed or {}) do extSpells[k] = true end
-                for spellID in pairs(extSpells) do
-                    local numA = (a.externalCDsUsed and a.externalCDsUsed[spellID]) or 0
-                    local numB = (b.externalCDsUsed and b.externalCDsUsed[spellID]) or 0
-                    local sInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
-                    local sName = sInfo and sInfo.name or ("Spell " .. spellID)
-                    local ta_ext = tostring(numA)
-                    local tb_ext = tostring(numB)
-                    addRow("  " .. sName, numA, numB, ta_ext, tb_ext, BuildCompare_FormatPercentDiffNeutral(numA, numB), numA > numB, numB > numA, 6)
-                end
-            end
-
-            -- Trinkets:
-            if (a.trinkets and #a.trinkets > 0) or (b.trinkets and #b.trinkets > 0) then
-                addSection("  |cFFFFD100Trinkets:|r", 6)
-                -- Get names
-                local aNames = {}
-                for _, itemID in ipairs(a.trinkets or {}) do
-                    if itemID then
-                        local itemName = C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(itemID) or GetItemInfo(itemID) or ("Item " .. itemID)
-                        table.insert(aNames, itemName)
-                    end
-                end
-                local bNames = {}
-                for _, itemID in ipairs(b.trinkets or {}) do
-                    if itemID then
-                        local itemName = C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(itemID) or GetItemInfo(itemID) or ("Item " .. itemID)
-                        table.insert(bNames, itemName)
-                    end
-                end
-                addRow("  Equipped", nil, nil, table.concat(aNames, ", "), table.concat(bNames, ", "), "", false, false, 6)
-                
-                -- Casts
-                local trSpells = {}
-                if a.trinketCDsUsed then
-                    for _, data in ipairs(a.trinketCDsUsed) do
-                        if data and data.spellId then trSpells[data.spellId] = true end
-                    end
-                end
-                if b.trinketCDsUsed then
-                    for _, data in ipairs(b.trinketCDsUsed) do
-                        if data and data.spellId then trSpells[data.spellId] = true end
-                    end
-                end
-                
-                for spellID in pairs(trSpells) do
-                    local numA = 0
-                    if a.trinketCDsUsed then
-                        for _, data in ipairs(a.trinketCDsUsed) do
-                            if data and data.spellId == spellID then numA = numA + 1 end
-                        end
-                    end
-                    local numB = 0
-                    if b.trinketCDsUsed then
-                        for _, data in ipairs(b.trinketCDsUsed) do
-                            if data and data.spellId == spellID then numB = numB + 1 end
-                        end
-                    end
-                    
-                    local sInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
-                    local sName = sInfo and sInfo.name or ("Spell " .. spellID)
-                    local ta_tr = tostring(numA)
-                    local tb_tr = tostring(numB)
-                    addRow("    " .. sName, numA, numB, ta_tr, tb_tr, BuildCompare_FormatPercentDiffNeutral(numA, numB), numA > numB, numB > numA, 6)
-                end
-            end
 
             -- Interrupts
             local na, nb = a.interrupts or 0, b.interrupts or 0
@@ -1638,6 +1680,24 @@ function BuildCompare_RefreshUI()
             ga = valB > valA
             gb = valA > valB
             addRow("Deaths", na, nb, ta, tb, BuildCompare_FormatPercentDiffLowerBetter(na, nb), ga, gb, 18)
+
+            -- Externals:
+            if (a.externalCDsUsed and next(a.externalCDsUsed)) or (b.externalCDsUsed and next(b.externalCDsUsed)) then
+                addSection("  |cFFFFD100Externals:|r", 6)
+                local extSpells = {}
+                for k in pairs(a.externalCDsUsed or {}) do extSpells[k] = true end
+                for k in pairs(b.externalCDsUsed or {}) do extSpells[k] = true end
+                for spellID in pairs(extSpells) do
+                    local numA = (a.externalCDsUsed and a.externalCDsUsed[spellID]) or 0
+                    local numB = (b.externalCDsUsed and b.externalCDsUsed[spellID]) or 0
+                    local sInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
+                    local sName = sInfo and sInfo.name or ("Spell " .. spellID)
+                    local ta_ext = tostring(numA)
+                    local tb_ext = tostring(numB)
+                    addRow("  " .. sName, numA, numB, ta_ext, tb_ext, BuildCompare_FormatPercentDiffNeutral(numA, numB), numA > numB, numB > numA, 6)
+                end
+            end
+
         end
 
         local function renderStatsSection()
@@ -1991,11 +2051,11 @@ function BuildCompare_RefreshUI()
         -- Layout presets
         local layoutPreset
         if activeLayout == "TANK" then
-            layoutPreset = { renderTankSection, renderDmgSection, renderHealSection, renderMiscSection, renderTalentsSection }
+            layoutPreset = { renderTankSection, renderDmgSection, renderHealSection, renderTrinketsSection, renderMiscSection, renderTalentsSection }
         elseif activeLayout == "HEALER" then
-            layoutPreset = { renderHealSection, renderDmgSection, renderTankSection, renderMiscSection, renderTalentsSection }
+            layoutPreset = { renderHealSection, renderDmgSection, renderTankSection, renderTrinketsSection, renderMiscSection, renderTalentsSection }
         else
-            layoutPreset = { renderDmgSection, renderHealSection, renderTankSection, renderMiscSection, renderTalentsSection }
+            layoutPreset = { renderDmgSection, renderHealSection, renderTankSection, renderTrinketsSection, renderMiscSection, renderTalentsSection }
         end
 
         -- Render modular sections dynamically using cumulative y offset
