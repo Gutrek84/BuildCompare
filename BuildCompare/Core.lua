@@ -874,7 +874,12 @@ StaticPopupDialogs["BUILDCOMPARE_CONFIRM_DELETE"] = {
     hideOnEscape = 1,
 }
 
+local isStopping = false
 local function StopCustomTracking()
+    if isStopping then return end
+    isStopping = true
+    C_Timer.After(3, function() isStopping = false end)
+    
     if activeRun and activeRun.runType == "custom" then
         BuildCompare_RecordCurrentRun(activeRun.buildLabel)
     else
@@ -1686,6 +1691,54 @@ StaticPopupDialogs["BUILDCOMPARE_EDIT_NOTE"] = {
         local eb = self.EditBox or _G[self:GetName().."EditBox"]
         local note = eb and eb:GetText() or ""
         BuildCompare_SaveRunNote(run.id, note)
+    end,
+    EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
+}
+
+local function BuildCompare_RenameRun(runID, newName)
+    if not runID or not newName or newName == "" then return end
+    if DB and DB.runs then
+        for i = 1, #DB.runs do
+            if DB.runs[i].id == runID then
+                DB.runs[i].buildLabel = newName
+            end
+        end
+    end
+    if CharDB and CharDB.runs then
+        for i = 1, #CharDB.runs do
+            if CharDB.runs[i].id == runID then
+                CharDB.runs[i].buildLabel = newName
+            end
+        end
+    end
+    Print("Run renamed to: " .. newName)
+    if BuildCompareFrame and BuildCompareFrame:IsShown() then
+        BuildCompare_RefreshUI()
+    end
+end
+_G.BuildCompare_RenameRun = BuildCompare_RenameRun
+
+StaticPopupDialogs["BUILDCOMPARE_RENAME_RUN"] = {
+    text = "Enter new name for this run:",
+    button1 = "Rename",
+    button2 = "Cancel",
+    hasEditBox = 1,
+    OnShow = function(self, run)
+        local eb = self.EditBox or _G[self:GetName().."EditBox"]
+        if eb then
+            local currentName = BuildCompare_GetRunLabel(run) or run.buildLabel or ""
+            eb:SetText(currentName)
+            eb:SetFocus()
+            eb:HighlightText()
+        end
+    end,
+    OnAccept = function(self, run)
+        local eb = self.EditBox or _G[self:GetName().."EditBox"]
+        local newName = eb and eb:GetText() or ""
+        BuildCompare_RenameRun(run.id, newName)
     end,
     EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
     timeout = 0,

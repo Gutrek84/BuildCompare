@@ -149,7 +149,7 @@ local function CreateBarRow(parent, index, run)
     -- Top Line: Run name and build label
     row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.label:SetPoint("TOPLEFT", row, "TOPLEFT", 55, -2)
-    row.label:SetPoint("RIGHT", row, "RIGHT", -42, 0)
+    row.label:SetPoint("RIGHT", row, "RIGHT", -60, 0)
     row.label:SetJustifyH("LEFT")
     row.label:SetText(BuildCompare_GetRunLabel(run) or run.buildLabel or "?")
 
@@ -160,7 +160,7 @@ local function CreateBarRow(parent, index, run)
     row.dtBar:SetMinMaxValues(0, 100)
     row.dtBar:SetValue(50)
     row.dtBar:SetPoint("TOPLEFT", row, "TOPLEFT", 55, -18)
-    row.dtBar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -42, -4)
+    row.dtBar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -60, -4)
 
     -- Text overlay on bar
     row.text = row.dtBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -175,16 +175,18 @@ local function CreateBarRow(parent, index, run)
     row.deleteBtn:SetSize(16, 16)
     row.deleteBtn:SetPoint("RIGHT", row, "RIGHT", -2, 0)
 
-    local delFS = row.deleteBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    delFS:SetPoint("CENTER")
-    delFS:SetText("|cFFFF3333X|r")
-    row.deleteBtn:SetFontString(delFS)
+    row.deleteBtn:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
 
-    row.deleteBtn:SetScript("OnEnter", function()
-        delFS:SetText("|cFFFF6666X|r") -- lighter red on hover
+    row.deleteBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine("Delete Run", 1, 0.2, 0.2)
+        GameTooltip:Show()
+        self:SetAlpha(0.7)
     end)
-    row.deleteBtn:SetScript("OnLeave", function()
-        delFS:SetText("|cFFFF3333X|r")
+    row.deleteBtn:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+        self:SetAlpha(1.0)
     end)
     row.deleteBtn:SetScript("OnClick", function()
         if not run or not run.id then return end
@@ -192,21 +194,41 @@ local function CreateBarRow(parent, index, run)
         StaticPopup_Show("BUILDCOMPARE_CONFIRM_DELETE", runLabel, nil, run)
     end)
 
+    -- Rename edit button
+    row.renameBtn = CreateFrame("Button", nil, row)
+    row.renameBtn:SetSize(14, 14)
+    row.renameBtn:SetPoint("RIGHT", row.deleteBtn, "LEFT", -4, 0)
+    row.renameBtn:SetNormalTexture(133642) -- INV_Misc_Quill_01
+    
+    row.renameBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine("Rename Run", 1, 0.82, 0)
+        GameTooltip:Show()
+        self:SetAlpha(0.7)
+    end)
+    row.renameBtn:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+        self:SetAlpha(1.0)
+    end)
+    row.renameBtn:SetScript("OnClick", function()
+        if not run or not run.id then return end
+        StaticPopup_Show("BUILDCOMPARE_RENAME_RUN", nil, nil, run)
+    end)
+
     -- Note edit button
     row.noteBtn = CreateFrame("Button", nil, row)
-    row.noteBtn:SetSize(16, 16)
-    row.noteBtn:SetPoint("RIGHT", row.deleteBtn, "LEFT", -4, 0)
+    row.noteBtn:SetSize(14, 14)
+    row.noteBtn:SetPoint("RIGHT", row.renameBtn, "LEFT", -4, 0)
+    row.noteBtn:SetNormalTexture(134400) -- INV_Misc_Note_01
 
-    local noteFS = row.noteBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    noteFS:SetPoint("CENTER")
-    
+    local noteTex = row.noteBtn:GetNormalTexture()
     local hasNote = run and run.note and run.note ~= ""
     if hasNote then
-        noteFS:SetText("|cFFFFD100N|r")
+        noteTex:SetVertexColor(1, 1, 1)
     else
-        noteFS:SetText("|cFF777777N|r")
+        noteTex:SetVertexColor(0.5, 0.5, 0.5)
     end
-    row.noteBtn:SetFontString(noteFS)
 
     row.noteBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -218,15 +240,11 @@ local function CreateBarRow(parent, index, run)
             GameTooltip:AddLine("Add Note", 1, 0.82, 0)
         end
         GameTooltip:Show()
-        noteFS:SetText("|cFFFFFFFFN|r")
+        self:SetAlpha(0.7)
     end)
-    row.noteBtn:SetScript("OnLeave", function()
+    row.noteBtn:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
-        if run and run.note and run.note ~= "" then
-            noteFS:SetText("|cFFFFD100N|r")
-        else
-            noteFS:SetText("|cFF777777N|r")
-        end
+        self:SetAlpha(1.0)
     end)
     row.noteBtn:SetScript("OnClick", function()
         if not run or not run.id then return end
@@ -709,7 +727,7 @@ function BuildCompare_CreateMainFrame()
     scroll:SetPoint("BOTTOMRIGHT", -28, 4)
 
     content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(340, 1)
+    content:SetSize(268, 1)
     scroll:SetScrollChild(content)
 
     frame.rows = {}
@@ -726,7 +744,11 @@ function BuildCompare_CreateMainFrame()
     btnStopCustom:SetSize(90, 20)
     btnStopCustom:SetPoint("LEFT", btnStartCustom, "RIGHT", 5, 0)
     btnStopCustom:SetText("Stop&Save")
-    btnStopCustom:SetScript("OnClick", StopCustomTracking)
+    btnStopCustom:SetScript("OnClick", function(self)
+        self:Disable()
+        C_Timer.After(3, function() if self then self:Enable() end end)
+        if _G.StopCustomTracking then _G.StopCustomTracking() end
+    end)
 
     -- Close button removed per request. Clear DB now placed exactly where Close was (right after Stop & Save Custom).
     local btnClear = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -2096,108 +2118,54 @@ local miniFrame = nil
 
 function BuildCompare_UpdateMiniDisplay(mf)
     if not mf then return end
-    local data = nil
-    if _G.GetNativeMeterData then
-        data = _G.GetNativeMeterData(true)  -- preferCurrent for live pull/segment view (Current first)
-    end
-    if not data then
-        mf.dtLine:SetText("DT: -- (no meter data)")
-        mf.avdtLine:SetText("AvDT: --")
-        mf.healLine:SetText("Heal: --")
-        mf.dmgLine:SetText("Dmg: --")
-        mf.cdsLine:SetText("Def CDs: --")
-        mf.timeLine:SetText("Time: --")
-        if miniFrame.startRecBtn then miniFrame.startRecBtn:Hide() end
-        if miniFrame.stopRecBtn then miniFrame.stopRecBtn:Hide() end
-        return
-    end
-
-    -- Use SetFormattedText + SafeDisplayVal for secret-safe k/m decimals in combat (issue #2 fix).
-    -- SafeDisplayVal returns raw secret val (for engine abbr via SetFormattedText) or the clean .1f k/m string. Replaces prior direct FormatNumber. Ensures DT, AvDT, Dmg, Heal + rates always abbreviated (1.5m, 40.5k) in mini current-run overlay even for secret protected numbers from GetNativeMeterData. Matches updated list rows.
-    mf.dtLine:SetFormattedText("DT: %s (%s/s)", SafeDisplayVal(data.dt or 0), SafeDisplayVal(data.dtps or 0))
-
-    mf.avdtLine:SetFormattedText("AvDT: %s (%s/s)", SafeDisplayVal(data.avoidableDT or 0), SafeDisplayVal(data.avoidableDTPS or 0))
-
-    mf.healLine:SetFormattedText("Heal: %s (%s/s)", SafeDisplayVal(data.healing or 0), SafeDisplayVal(data.hps or 0))
-
-    mf.dmgLine:SetFormattedText("Dmg: %s (%s/s)", SafeDisplayVal(data.damage or 0), SafeDisplayVal(data.dps or 0))
-
-    -- Live defensive CD count (only tracked if an activeRun/custom/M+ is in progress via events)
-    local cdsCount = 0
-    if _G.BuildCompare_GetActiveRun then
-        local ar = _G.BuildCompare_GetActiveRun()
-        if ar and ar.defensiveCDsUsed then
-            cdsCount = #ar.defensiveCDsUsed
-        end
-    end
-    mf.cdsLine:SetText("Def CDs: " .. cdsCount)
-
-    -- Live recording timer (prefer activeRun for "how long recording" -- always safe clean number;
-    -- only fall back to meter duration if it is not secret. FormatDuration itself also guards secrets and returns "live".)
-    local dur = 0
+    
     local ar = _G.BuildCompare_GetActiveRun and _G.BuildCompare_GetActiveRun()
-    if ar and ar.startTime then
-        dur = time() - ar.startTime
-    elseif data and data.duration and not IsSecret(data.duration) then
-        dur = data.duration
-    end
-    local timerStr = BuildCompare_FormatDuration and BuildCompare_FormatDuration(dur) or (math.floor(dur or 0) .. "s")
-    mf.timeLine:SetText("Time: " .. timerStr)
-
-    -- Control Start/Stop Record buttons: only show the appropriate one when NOT in active mythic or raid boss fight.
-    -- This prevents accidental clicks during M+ or boss encounters. Start for new custom, Stop if custom already active.
-    local showRecButtons = true
-    local ar = _G.BuildCompare_GetActiveRun and _G.BuildCompare_GetActiveRun()
-    if ar then
-        local rt = ar.runType or (ar.keyLevel and ar.keyLevel > 0 and "mythic") or (ar.bossName and "raid") or "custom"
-        if rt == "mythic" or rt == "raid" then
-            showRecButtons = false
-        end
-    end
-    if miniFrame.startRecBtn and miniFrame.stopRecBtn then
-        if not showRecButtons then
-            miniFrame.startRecBtn:Hide()
-            miniFrame.stopRecBtn:Hide()
-        else
-            if ar and ar.runType == "custom" then
-                miniFrame.startRecBtn:Hide()
-                miniFrame.stopRecBtn:Show()
+    local _, instanceType = GetInstanceInfo()
+    local isInstanced = (instanceType == "party" or instanceType == "raid")
+    
+    if isInstanced then
+        if mf.startRecBtn then mf.startRecBtn:Hide() end
+        if mf.stopRecBtn then mf.stopRecBtn:Hide() end
+        if mf.autoRecLine then mf.autoRecLine:Hide() end
+        if mf.sessionLine then
+            if ar then
+                mf.sessionLine:SetText("|cFF00FF00Recording Run|r")
             else
-                miniFrame.startRecBtn:Show()
-                miniFrame.stopRecBtn:Hide()
+                mf.sessionLine:SetText("|cFF999999Inactive|r")
             end
         end
-    end
-
-    -- Update title with active build label if present (e.g. custom run label or "Auto")
-    local label = "Live"
-    if _G.BuildCompare_GetActiveRun then
-        local ar = _G.BuildCompare_GetActiveRun()
-        if ar and ar.buildLabel then label = ar.buildLabel end
-    end
-    mf.title:SetText("BC Live: " .. label)
-
-    -- Update thin DT bar (scale grows to max seen; provides quick visual 'level' while over meters)
-    -- Guard against secret to avoid taint on SetValue / comparisons (bar is visual only; text above uses formatted path).
-    if mf.dtBar then
-        local v = data.dt or 0
-        if IsSecret(v) then
-            mf.dtBar:SetValue(0)
+    else
+        if mf.autoRecLine then mf.autoRecLine:Hide() end
+        if ar and ar.runType == "custom" then
+            if mf.sessionLine then mf.sessionLine:SetText("|cFF00FF00Recording Run|r") end
+            if mf.startRecBtn then mf.startRecBtn:Hide() end
+            if mf.stopRecBtn then mf.stopRecBtn:Show() end
         else
-            if v > (mf.barMax or 0) then
-                mf.barMax = v
-            end
-            mf.dtBar:SetMinMaxValues(0, mf.barMax or 100)
-            mf.dtBar:SetValue(v)
+            if mf.sessionLine then mf.sessionLine:SetText("|cFF999999Not Recording|r") end
+            if mf.startRecBtn then mf.startRecBtn:Show() end
+            if mf.stopRecBtn then mf.stopRecBtn:Hide() end
         end
+    end
+
+    -- Update title with active build label if present
+    local label = "Idle"
+    if ar then
+        if ar.buildLabel then 
+            label = ar.buildLabel 
+        else
+            label = "Live"
+        end
+    end
+    if mf.title then
+        mf.title:SetText("BC Tracker: " .. label)
     end
 end
 
 function BuildCompare_ShowMiniCurrent()
     if not miniFrame then
         miniFrame = CreateFrame("Frame", "BuildCompareMini", UIParent, "BackdropTemplate")
-        miniFrame:SetSize(215, 126)
-        miniFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 300, -80)  -- default near center-top; drag to overlay default meters
+        miniFrame:SetSize(215, 60)
+        miniFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 300, -80)
         miniFrame:SetMovable(true)
         miniFrame:EnableMouse(true)
         miniFrame:RegisterForDrag("LeftButton")
@@ -2211,100 +2179,73 @@ function BuildCompare_ShowMiniCurrent()
             insets = { left = 2, right = 2, top = 2, bottom = 2 }
         })
         miniFrame:SetBackdropColor(0.03, 0.03, 0.03, 0.88)
-        miniFrame:SetFrameStrata("MEDIUM")  -- sits nicely over meter frames
+        miniFrame:SetFrameStrata("MEDIUM")
 
         -- Compact title
         miniFrame.title = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         miniFrame.title:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -3)
-        miniFrame.title:SetText("BC Live: Live")
+        miniFrame.title:SetText("BC Tracker: Idle")
 
-        -- Action buttons on right (x hide mini, + expand to full UI). No Rec per request; timer shows recording duration instead.
-        local xBtn = CreateFrame("Button", nil, miniFrame, "UIPanelButtonTemplate")
+        -- Action buttons on right (x hide mini, + expand to full UI). Sleek frameless text buttons.
+        local xBtn = CreateFrame("Button", nil, miniFrame)
         xBtn:SetSize(18, 18)
         xBtn:SetPoint("TOPRIGHT", miniFrame, "TOPRIGHT", -3, -2)
-        xBtn:SetText("x")
+        local xFS = xBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        xFS:SetPoint("CENTER")
+        xFS:SetText("[x]")
+        xBtn:SetFontString(xFS)
         xBtn:SetScript("OnClick", function() miniFrame:Hide() end)
 
-        local expandBtn = CreateFrame("Button", nil, miniFrame, "UIPanelButtonTemplate")
+        local expandBtn = CreateFrame("Button", nil, miniFrame)
         expandBtn:SetSize(18, 18)
-        expandBtn:SetPoint("TOPRIGHT", xBtn, "TOPLEFT", -1, 0)
-        expandBtn:SetText("+")
+        expandBtn:SetPoint("TOPRIGHT", xBtn, "TOPLEFT", -2, 0)
+        local expandFS = expandBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        expandFS:SetPoint("CENTER")
+        expandFS:SetText("[+]")
+        expandBtn:SetFontString(expandFS)
         expandBtn:SetScript("OnClick", function()
             miniFrame:Hide()
             if _G.BuildCompare_ShowUI then _G.BuildCompare_ShowUI() end
         end)
 
-        -- Start/Stop Record buttons for custom runs. Stacked below top-right actions.
-        -- Only visible when NOT in active mythic or raid boss fight (to avoid accidental clicks during those).
+        -- Session heartbeat line
+        miniFrame.sessionLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        miniFrame.sessionLine:SetPoint("CENTER", miniFrame, "CENTER", 0, 5)
+        miniFrame.sessionLine:SetText("Runs Recorded Today: 0")
+
+        -- Start/Stop Record buttons for custom runs.
         miniFrame.startRecBtn = CreateFrame("Button", nil, miniFrame, "UIPanelButtonTemplate")
-        miniFrame.startRecBtn:SetSize(55, 14)
-        miniFrame.startRecBtn:SetPoint("TOPRIGHT", expandBtn, "BOTTOMRIGHT", 0, -1)
+        miniFrame.startRecBtn:SetSize(65, 20)
+        miniFrame.startRecBtn:SetPoint("BOTTOM", miniFrame, "BOTTOM", 0, 5)
         miniFrame.startRecBtn:SetText("Start Rec")
-        miniFrame.startRecBtn:SetNormalFontObject("GameFontNormalSmall")
         miniFrame.startRecBtn:SetScript("OnClick", function()
             if _G.StartCustomRun then _G.StartCustomRun() end
         end)
-        miniFrame.startRecBtn:Hide()
 
         miniFrame.stopRecBtn = CreateFrame("Button", nil, miniFrame, "UIPanelButtonTemplate")
-        miniFrame.stopRecBtn:SetSize(55, 14)
-        miniFrame.stopRecBtn:SetPoint("TOPRIGHT", miniFrame.startRecBtn, "BOTTOMRIGHT", 0, -1)
+        miniFrame.stopRecBtn:SetSize(65, 20)
+        miniFrame.stopRecBtn:SetPoint("BOTTOM", miniFrame, "BOTTOM", 0, 5)
         miniFrame.stopRecBtn:SetText("Stop Rec")
-        miniFrame.stopRecBtn:SetNormalFontObject("GameFontNormalSmall")
-        miniFrame.stopRecBtn:SetScript("OnClick", function()
+        miniFrame.stopRecBtn:SetScript("OnClick", function(self)
+            self:Disable()
+            C_Timer.After(3, function() if self then self:Enable() end end)
             if _G.StopCustomTracking then _G.StopCustomTracking() end
         end)
-        miniFrame.stopRecBtn:Hide()
 
-        -- Live data lines (compact, 4 rows of text)
-        miniFrame.dtLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        miniFrame.dtLine:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -34)
-        miniFrame.dtLine:SetText("DT: " .. BuildCompare_FormatNumber(0) .. " (" .. BuildCompare_FormatNumber(0) .. "/s)")
+        miniFrame.autoRecLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        miniFrame.autoRecLine:SetPoint("BOTTOM", miniFrame, "BOTTOM", 0, 7)
+        miniFrame.autoRecLine:SetText("|cFF00FF00Auto-Record: Ready|r")
+        miniFrame.autoRecLine:Hide()
 
-        miniFrame.avdtLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        miniFrame.avdtLine:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -47)
-        miniFrame.avdtLine:SetText("AvDT: " .. BuildCompare_FormatNumber(0) .. " (" .. BuildCompare_FormatNumber(0) .. "/s)")
-
-        miniFrame.healLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        miniFrame.healLine:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -60)
-        miniFrame.healLine:SetText("Heal: " .. BuildCompare_FormatNumber(0) .. " (" .. BuildCompare_FormatNumber(0) .. "/s)")
-
-        -- New: player's damage done (useful context when mini is placed over the default WoW damage meters)
-        miniFrame.dmgLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        miniFrame.dmgLine:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -73)
-        miniFrame.dmgLine:SetText("Dmg: " .. BuildCompare_FormatNumber(0) .. " (" .. BuildCompare_FormatNumber(0) .. "/s)")
-
-        miniFrame.cdsLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        miniFrame.cdsLine:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -86)
-        miniFrame.cdsLine:SetText("Def CDs: 0")
-
-        -- Live recording timer (how long the current active run / combat has been tracking)
-        miniFrame.timeLine = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        miniFrame.timeLine:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 5, -99)
-        miniFrame.timeLine:SetText("Time: 0s")
-
-        -- Thin visual bar at bottom (DT relative; live so absolute feel only)
-        miniFrame.dtBar = CreateFrame("StatusBar", nil, miniFrame)
-        miniFrame.dtBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-        miniFrame.dtBar:SetStatusBarColor(0.85, 0.25, 0.25)
-        miniFrame.dtBar:SetMinMaxValues(0, 100)
-        miniFrame.dtBar:SetValue(0)
-        miniFrame.dtBar:SetPoint("TOPLEFT", miniFrame, "TOPLEFT", 4, -113)
-        miniFrame.dtBar:SetPoint("BOTTOMRIGHT", miniFrame, "BOTTOMRIGHT", -4, 3)
-        miniFrame.dtBar:SetHeight(5)
-
-        -- Live updater (fast poll for during-run feel; 0.25s = responsive without spam)
+        -- Live updater for heartbeat
         miniFrame.lastUpdate = 0
         miniFrame:SetScript("OnUpdate", function(self, elapsed)
             self.lastUpdate = self.lastUpdate + elapsed
-            if self.lastUpdate > 0.25 then
+            if self.lastUpdate > 1.0 then
                 self.lastUpdate = 0
                 BuildCompare_UpdateMiniDisplay(self)
             end
         end)
-
-        -- init bar max (grows as higher DT seen this session for visual scale)
-        miniFrame.barMax = 100
     end
     miniFrame:Show()
     BuildCompare_UpdateMiniDisplay(miniFrame)
